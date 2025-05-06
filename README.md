@@ -1,4 +1,4 @@
-### Project Overview
+# Project Overview
 This repository contains R Markdown scripts for processing, visualizing, and analyzing multimodal data—including neural, cognitive, and environmental metrics—to identify subgroups of youth with distressing psychotic-like experiences.
 
 ## Script Summaries
