@@ -1,0 +1,78 @@
+---
+title: "Similarity Matrix Plots"
+author: "Julia Gallucci"
+date: "05/05/2025"
+output: html_document
+---
+Load necessary packages
+```{r}
+library(igraph)
+library(ggraph)
+library(tidygraph)
+library(RColorBrewer)
+library(MASS)
+library(dplyr)
+library(readr)
+```
+
+Process Split 1 Data
+```{r}
+# Load matrix and subject IDs
+sim_matrix_1 <- as.matrix(read.table("../Split1_clustering_matrix_5_clust_k44_0.7_1000perms", header = FALSE))
+
+Split1_RESULTS_5_clust_k44_0_7 <- read_csv("../Split1_RESULTS_5_clust_k44_0.7.csv")
+
+subject_ids_1 <- Split1_RESULTS_5_clust_k44_0_7$src_subject_id
+
+# Apply subject IDs to matrix
+rownames(sim_matrix_1) <- colnames(sim_matrix_1) <- subject_ids_1
+sim_matrix_1[sim_matrix_1 < 0.5] <- 0  # Optional sparsification
+
+# Create graph and assign clusters
+g1 <- graph_from_adjacency_matrix(sim_matrix_1, mode = "undirected", weighted = TRUE, diag = FALSE)
+V(g1)$cluster <- as.factor(Split1_RESULTS_5_clust_k44_0_7$groups)
+tg1 <- as_tbl_graph(g1)
+
+# Layout and plot
+layout_split1 <- create_layout(tg1, layout = "stress")
+plot1 <- ggraph(layout_split1) +
+  geom_edge_link(aes(alpha = 0.05), color = "grey80", show.legend = FALSE) +
+  geom_node_point(aes(fill = cluster), shape = 21, size = 10, stroke = 0.5, colour = "black") +
+  theme_void() +
+  ggtitle("Split 1: Similarity Network")
+```
+
+Process Split 2 Data
+```{r}
+# Load matrix and subject IDs
+sim_matrix_2 <- as.matrix(read.table("../Split2_clustering_matrix_5_clust_k44_0.7_1000perms", header = FALSE))
+Split2_RESULTS_5_clust_k44_0_7 <-read_csv("../Split2_RESULTS_5_clust_k44_0.7.csv")
+
+subject_ids_2 <- Split2_RESULTS_5_clust_k44_0_7$src_subject_id
+
+# Recode clusters to match interpretation in Split 1
+Split2_RESULTS_5_clust_k44_0_7 <- Split2_RESULTS_5_clust_k44_0_7 %>%
+  mutate(groups = recode(groups, '5' = '4', '4' = '3', '3' = '2', '2' = '1', '1' = '5'))
+
+# Apply subject IDs to matrix
+rownames(sim_matrix_2) <- colnames(sim_matrix_2) <- subject_ids_2
+sim_matrix_2[sim_matrix_2 < 0.5] <- 0
+
+# Create graph and assign clusters
+g2 <- graph_from_adjacency_matrix(sim_matrix_2, mode = "undirected", weighted = TRUE, diag = FALSE)
+V(g2)$cluster <- as.factor(Split2_RESULTS_5_clust_k44_0_7$groups)
+tg2 <- as_tbl_graph(g2)
+
+# Layout and plot
+layout_split2 <- create_layout(tg2, layout = "stress")
+plot2 <- ggraph(layout_split2) +
+  geom_edge_link(aes(alpha = 0.05), color = "grey80", show.legend = FALSE) +
+  geom_node_point(aes(fill = cluster), shape = 21, size = 10, stroke = 0.5, colour = "black") +
+  theme_void() +
+  ggtitle("Split 2: Similarity Network")
+```
+Save plots
+```{r}
+ggsave("Split1_SimilarityNetwork.png", plot = plot1, width = 8, height = 8, dpi = 300)
+ggsave("Split2_SimilarityNetwork.png", plot = plot2, width = 8, height = 8, dpi = 300)
+```
