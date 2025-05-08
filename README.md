@@ -11,5 +11,8 @@ Plots normalized mutual information (NMI) scores to rank feature importance acro
 - **Similarity_Matrix.Rmd**
 Visualizes participant-level similarity matrices derived from SNF, annotated by data-driven group labels for both discovery and replication samples.
 
+- **comparing_clusters.Rmd**
+Assesses differences across clusters within each data modality using linear models and ANOVAs, and generates visualizations.
+
 - **Longitudinal_Analysis_PLE.Rmd**
 Performs longitudinal trajectory modeling of Total PLE scores across baseline, Year 1, and Year 2 using LCGA and GMM.
