@@ -195,10 +195,9 @@ ggplot(heatmap_long, aes(x = Class, y = src_subject_id, fill = Probability)) +
 
 ```{r}
 trajectory_2 <- as.data.frame(gmm3_2$pprob[, 1:2]) #best fit model
-ple_longitudinal_long_2 <- ple_longitudinal_long %>% select(-class)
 
 # trajectory has class labels for each pin, merge them into PEPP_cdss data
-ple_longitudinal_long_2 <- ple_longitudinal_long_2 %>%
+ple_longitudinal_long_2 <- ple_longitudinal_long %>%
   left_join(trajectory_2, by = "src_subject_id") %>%
   mutate(class = factor(class)) 
 
@@ -208,10 +207,11 @@ ple_longitudinal_long_2$class <- factor(ple_longitudinal_long_2$class, levels = 
 # Plotting
 ple_longitudinal_long_2 %>%
   ggplot(aes(x = time_point, y = ple_score, group = src_subject_id, color = class)) +
-  geom_line(alpha = 0.1, size = 0.5) + 
-  geom_smooth(aes(group = class), method = "loess", span = 0.3, size = 2, se = TRUE)+  
+  geom_line(alpha = 0.1, size = 0.15) +  # Make lines more transparent and thinner
+  geom_smooth(aes(group = class), method = "loess", size = 2, se = TRUE, alpha = 0.4) +
+theme(legend.key = element_rect(fill = NA))  +
   scale_x_continuous(breaks = unique(ple_longitudinal_long_2$time_point)) +
-  labs(x = "Time Point (Yrs)", y = "PLE Total Score weighted by distress", colour = "Latent Class") +
+  labs(x = "Time Point (Years)", y = "Total PLE weighted by distress", colour = "Latent Class") +
   geom_point(size = 1, alpha = 0.1) +  # Smaller and more transparent points
   labs(title = "PLE Total Score weighted by distress Over Time") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for readability
