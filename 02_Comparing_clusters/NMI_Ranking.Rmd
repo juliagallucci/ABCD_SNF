@@ -1,0 +1,788 @@
+---
+title: "NMI_Ranking"
+author: "Julia Gallucci"
+date: "05/05/2025"
+output: html_document
+---
+Load necessary packages
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+Load discovery and replication data
+```{r}
+split1_nmi <- read_excel("../split1_nmi.xlsx")
+split2_nmi <- read_excel("../split2_nmi.xlsx")
+```
+
+1. Cognition
+```{r}
+# vector of strings to match
+cog_tests <- c("nihtbx_flanker_uncorrected", 
+                   "nihtbx_list_uncorrected", 
+                   "nihtbx_cardsort_uncorrected", 
+                   "nihtbx_pattern_uncorrected", 
+                   "nihtbx_picture_uncorrected", 
+                   "nihtbx_reading_uncorrected", 
+                   "nihtbx_picvocab_uncorrected", 
+                   "pea_wiscv_trs", 
+                   "rey_all_correct", 
+                   "lmt_scr_num_correct")
+
+#filter for cognitive tests, order by Rank
+split1_cog <- split1_nmi %>%
+  filter(Feature %in% cog_tests) %>%
+  arrange(Rank)
+
+split2_cog <- split2_nmi %>%
+  filter(Feature %in% cog_tests) %>%
+  arrange(Rank)
+
+#Replace feature names with readable labels
+cog_labels <- c(
+  "lmt_scr_num_correct" = "Little Man Task",
+  "nihtbx_cardsort_uncorrected" = "NIH Toolbox Card Sort",
+  "nihtbx_flanker_uncorrected" = "NIH Toolbox Flanker",
+  "nihtbx_list_uncorrected" = "NIH Toolbox List Sorting",
+  "nihtbx_pattern_uncorrected" = "NIH Toolbox Pattern Comparison",
+  "nihtbx_picture_uncorrected" = "NIH Toolbox Picture Sequence",
+  "nihtbx_picvocab_uncorrected" = "NIH Toolbox Picture Vocabulary",
+  "nihtbx_reading_uncorrected" = "NIH Toolbox Reading",
+  "pea_wiscv_trs" = "WISC-V Matrix Reasoning",
+  "rey_all_correct" = "Rey Auditory Verbal Learning"
+)
+
+replace_cog_labels <- function(vec, replacements) {
+  for (abbr in names(replacements)) {
+    vec <- gsub(paste0("^", abbr, "$"), replacements[[abbr]], vec)
+  }
+  return(vec)
+}
+split1_cog$Feature <- replace_cog_labels(split1_cog$Feature, cog_labels)
+split2_cog$Feature <- replace_cog_labels(split2_cog$Feature, cog_labels)
+# Add source labels
+split1_cog <- split1_cog %>%
+  mutate(Sample = "Discovery")
+
+split2_cog <- split2_cog %>%
+  mutate(Sample = "Replication")
+
+# Combine the data
+combined_cog <- bind_rows(split1_cog, split2_cog)
+
+# Plot with facet
+ggplot(combined_cog, aes(y = NMI, x = Feature, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    name = "Feature Rank",
+    limits = c(1,551),
+    guide = guide_colorbar(reverse = TRUE)  # Optional: reverse so low rank = darker
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.10),
+    breaks = seq(0, 0.10, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+2. Environment
+```{r}
+# Define categories for environment
+env_categories <- list(
+  Socioeconomic_Proximal_Environment = c(
+    "ADD_nat_perc", "income", "total_neighbourhood_safety", "walkindex", "crime",
+    "gross_density", "no2_pollution", "pm_pollution", "proximity_to_roads",
+    "lead_risk", "parental_education", "econ_deprivation","sub_availability"
+  ),
+  Social_Environment = c(
+    "total_school_environment", "total_parental_support", "total_caregiver_support",
+    "num_friends", "parental_monitoring_total", "family_conflict_total",
+    "traumatic_events_total", "fam_mental_health", "family_support",
+    "family_obligation", "family_independence", "family_referent", "ethnic_identity",
+    "good_events", "bad_events","discrim"
+  ),
+  Developmental_Adversity = c(
+    "tbi_ss_worst_overall", "maternal_age", "paternal_age", "birth_weight",
+    "premature", "illness", "breastfeeding", "verbal_development", "motor_development",
+    "pregnancy_complications", "birth_complications", "maternal_substance_use"
+  )
+)
+
+# Function to tag category
+find_category <- function(var) {
+  category <- names(env_categories)[sapply(env_categories, function(x) var %in% x)]
+  if (length(category) == 0) return("Other") else return(category)
+}
+
+# Named vector: original feature names as names, new labels as values
+feature_labels <- c(
+  "ADD_nat_perc" = "Area Deprivation Index National %",
+  "income" = "Income",
+  "sub_availability" = "Substance Availability",
+  "tbi_ss_worst_overall" = "Traumatic brain injury",
+  "discrim" = "Discrimination",
+  "econ_deprivation" = "Economic Deprivation",
+  "maternal_substance_use" = "Maternal Substance Use",
+  "gross_density" = "Gross Density",
+  "family_support" = "Family Support",
+  "lead_risk" = "Lead Risk",
+  "parental_education" = "Parental Education",
+  "verbal_development" = "Verbal Development",
+  "parental_monitoring_total" = "Parental Monitoring",
+  "pregnancy_complications" = "Pregnancy Complications",
+  "total_parental_support" = "Parental Support",
+  "walkindex" = "Walkability Index",
+  "good_events" = "Positive Life Events",
+  "motor_development" = "Motor Development",
+  "pm_pollution" = "PM Pollution",
+  "total_caregiver_support" = "Caregiver Support",
+  "breastfeeding" = "Breastfeeding",
+  "maternal_age" = "Maternal Age",
+  "crime" = "Crime",
+  "total_school_environment" = "School Environment",
+  "illness" = "Illness",
+  "traumatic_events_total" = "Traumatic Events",
+  "family_obligation" = "Family Obligation",
+  "birth_complications" = "Birth Complications",
+  "birth_weight" = "Birth Weight",
+  "ethnic_identity" = "Ethnic Identity",
+  "bad_events" = "Negative Life Events",
+  "premature" = "Premature Birth",
+  "family_independence" = "Family Independence",
+  "total_neighbourhood_safety" = "Neighbourhood Safety",
+  "paternal_age" = "Paternal Age",
+  "proximity_to_roads" = "Proximity to Roads",
+  "no2_pollution" = "NO2 Pollution",
+  "family_referent" = "Family Referent",
+  "family_conflict_total" = "Family Conflict",
+  "fam_mental_health" = "Family Mental Health",
+  "num_friends" = "Number of Friends"
+)
+
+# Replace feature names with readable labels
+replace_feature_labels <- function(vec, replacements) {
+  for (abbr in names(replacements)) {
+    vec <- gsub(paste0("^", abbr, "$"), replacements[[abbr]], vec)
+  }
+  return(vec)
+}
+
+# Combine all features from the defined environmental categories
+env_tests <- unlist(env_categories)
+
+# Tag split1_env and split2_env with Category and Sample
+split1_env <- split1_nmi %>%
+  filter(Feature %in% env_tests) %>%
+  arrange(Rank) %>%
+  mutate(
+    Category = sapply(Feature, find_category),
+    Sample = "Discovery"
+  )
+
+split2_env <- split2_nmi %>%
+  filter(Feature %in% env_tests) %>%
+  arrange(Rank) %>%
+  mutate(
+    Category = sapply(Feature, find_category),
+    Sample = "Replication"
+  )
+
+split1_env$Feature <- replace_feature_labels(split1_env$Feature, feature_labels)
+split2_env$Feature <- replace_feature_labels(split2_env$Feature, feature_labels)
+
+# Step 4: Combine datasets
+combined_env <- bind_rows(split1_env, split2_env)
+
+# Sort Feature within Category
+combined_env <- combined_env %>%
+  arrange(Category, Rank) %>%
+  mutate(Feature = factor(Feature, levels = unique(Feature)))  # preserve order
+
+# Plot
+ggplot(combined_env, aes(y = NMI, x = Feature, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    name = "Feature Rank",
+    limits = c(1,551),
+    guide = guide_colorbar(reverse = TRUE)  
+  )+
+  scale_y_continuous(
+    limits = c(0, 0.06),
+    breaks = seq(0, 0.06, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+3. Cortical thickness
+```{r}
+split1_ct <- split1_nmi %>%
+  filter(grepl("smri_thick", Feature)) %>%
+  arrange(Rank)
+split2_ct <- split2_nmi %>%
+  filter(grepl("smri_thick", Feature)) %>%
+  arrange(Rank)
+
+split1_ct <- split1_ct %>%
+  mutate(Feature = str_remove(Feature, "smri_thick_cdk_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+split2_ct <- split2_ct %>%
+  mutate(Feature = str_remove(Feature, "smri_thick_cdk_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+# Vector of patterns and replacements
+patterns <- c("lh_rracate", "rh_rracate", "lh_precn", "rh_precn", "lh_postcn", "rh_postcn",
+              "lh_locc", "rh_locc", "rh_paracn", "lh_paracn", "rh_mdtm", "lh_mdtm",
+              "lh_pericc", "rh_pericc", "rh_iftm", "lh_iftm", "lh_supl", "rh_supl",
+              "rh_sufr", "rh_sm", "lh_sm", "lh_ifpl", "rh_ifpl", "rh_parahpal",
+              "lh_pc", "rh_pc", "rh_sutm", "lh_sutm", "lh_cdmdfr", "rh_cdmdfr",
+              "lh_parahpal", "rh_parahpal", "lh_tmpole", "rh_tmpole", "rh_trvtm", "lh_trvtm",
+              "rh_frpole", "lh_frpole", "lh_ehinal", "lh_ptcate", "rh_ihcate", "rh_lobfr",
+              "lh_lobfr", "lh_ihcate", "lh_mobfr", "rh_mobfr", "lh_sufr", "lh_parsopc",
+              "rh_parsopc", "lh_rrmdfr", "rh_rrmdfr", "rh_parstgris", "lh_parstgris",
+              "rh_parsobis", "lh_parsobis", "rh_ptcate", "rh_cdacate", "lh_cdacate", "rh_ehinal",
+              "lh_bankssts","lh_cuneus","lh_fusiform","lh_insula","lh_lingual",
+              "rh_bankssts","rh_cuneus","rh_fusiform","rh_insula","rh_lingual")
+
+replacements <- c("Left Rostral Anterior Cingulate", "Right Rostral Anterior Cingulate", "Left precentral", "Right precentral", 
+                  "Left Post-central", "Right Post-central", "Left Lateral Occipital", "Right Lateral Occipital", "Right Paracentral", 
+                  "Left Paracentral", "Right Middle Temporal", "Left Middle Temporal", "Left Pericalcarine", "Right Pericalcarine", 
+                  "Right Inferior Temporal", "Left Inferior Temporal", "Left Superior Parietal", "Right Superior Parietal", 
+                  "Right Superior Frontal", "Right Supramarginal", "Left Supramarginal", "Left Inferior Parietal", 
+                  "Right Inferior Parietal", "Right Parahippocampal", "Left Precuneus", "Right precuneus", "Right Superior Temporal", 
+                  "Left Superior Temporal", "Left Caudal Middle Frontal", "Right Caudal Middle Frontal", "Left Parahippocampal", 
+                  "Right Parahippocampal", "Left Temporal Pole", "Right Temporal Pole", "Right Transverse Temporal", 
+                  "Left Transverse Temporal", "Right Frontal Pole", "Left Frontal Pole", "Left Entorhinal", "Left Posterior Cingulate", 
+                  "Right Isthmus Cingulate", "Right Lateral Orbitofrontal", "Left Lateral Orbitofrontal", "Left Isthmus Cingulate", 
+                  "Left Medial Orbitofrontal", "Right Medial Orbitofrontal", "Left Superior Frontal", "Left Parsopercularis", 
+                  "Right Parsopercularis", "Left Rostral Middle Frontal", "Right Rostral Middle Frontal", "Right Parstriangularis", 
+                  "Left Parstriangularis", "Right Parsorbitalis", "Left Parsorbitalis", "Right Posterior Cingulate", 
+                  "Right Caudal Anterior Cingulate", "Left Caudal Anterior Cingulate", "Right Entorhinal",
+                  "Left Bankssts","Left Cuneus","Left Fusiform","Left Insula","Left Lingual",
+                  "Right Bankssts","Right Cuneus","Right Fusiform","Right Insula","Right Lingual")
+
+# Function to replace labels
+replace_labels <- function(df, patterns, replacements) {
+  for(i in seq_along(patterns)) {
+    df$Feature <- gsub(patterns[i], replacements[i], df$Feature)
+  }
+  return(df)
+}
+
+# Apply to split1_ct and split2_ct
+split1_ct <- replace_labels(split1_ct, patterns, replacements)
+split2_ct <- replace_labels(split2_ct, patterns, replacements)
+
+# Add source labels
+split1_ct <- split1_ct %>%
+  mutate(Sample = "Discovery")
+
+split2_ct <- split2_ct %>%
+  mutate(Sample = "Replication")
+
+# Combine the data
+combined_ct <- bind_rows(split1_ct, split2_ct)
+
+# Plot with facet
+ggplot(combined_ct, aes(y = NMI, x = Feature, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    name = "Feature Rank",
+    limits = c(1,551),
+    guide = guide_colorbar(reverse = TRUE)  # Optional: reverse so low rank = darker
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.08),
+    breaks = seq(0, 0.08, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+4. Sub-cortical Volume
+```{r}
+split1_vol <- split1_nmi %>%
+  filter(grepl("smri_vol", Feature)) %>%
+  arrange(Rank)
+split2_vol <- split2_nmi %>%
+  filter(grepl("smri_vol", Feature)) %>%
+  arrange(Rank)
+
+split1_vol <- split1_vol %>%
+  mutate(Feature = str_remove(Feature, "smri_vol_scs_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+split2_vol <- split2_vol %>%
+  mutate(Feature = str_remove(Feature, "smri_vol_scs_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+# Define replacements as named vector
+vol_replacements <- c(
+  "bstem" = "Brain Stem",
+  "rh_ltventricle" = "Right Lateral Ventricle",
+  "lh_ltventricle" = "Left Lateral Ventricle",
+  "lh_pallidum" = "Left Pallidum",
+  "rh_pallidum" = "Right Pallidum",
+  "rh_tp" = "Right Thalamus Proper",
+  "lh_tp" = "Left Thalamus Proper",
+  "lh_putamen" = "Left Putamen",
+  "rh_putamen" = "Right Putamen",
+  "rh_vedc" = "Right VentralDC",
+  "lh_vedc" = "Left VentralDC",
+  "rh_caudate" = "Right Caudate",
+  "lh_caudate" = "Left Caudate",
+  "rh_hpus" = "Right Hippocampus",
+  "lh_hpus" = "Left Hippocampus",
+  "rh_crbcortex" = "Right Cerebellum Cortex",
+  "lh_crbcortex" = "Left Cerebellum Cortex",
+  "rh_crbwmatter" = "Right Cerebellum White Matter",
+  "lh_amygdala" = "Left Amygdala",
+  "rh_amygdala" = "Right Amygdala",
+  "aal" = "Left Accumbens Area",
+  "aar" = "Right Accumbens Area",
+  "rh_inflatvent" = "Right Inferior Lateral Ventricle",
+  "lh_inflatvent" = "Left Inferior Lateral Ventricle",
+  "x3rd-ventricle" = "Ventricle 3rd",
+  "x4th-ventricle" = "Ventricle 4th"
+)
+
+# Function to replace all keys in a vector based on the vol_replacements
+replace_vol_labels <- function(vec, replacements) {
+  for (abbr in names(replacements)) {
+    vec <- gsub(abbr, replacements[[abbr]], vec)
+  }
+  return(vec)
+}
+
+# Apply to both split1_vol and split2_vol
+split1_vol$Feature <- replace_vol_labels(split1_vol$Feature, vol_replacements)
+split2_vol$Feature <- replace_vol_labels(split2_vol$Feature, vol_replacements)
+
+# Add source labels
+split1_vol <- split1_vol %>%
+  mutate(Sample = "Discovery")
+
+split2_vol <- split2_vol %>%
+  mutate(Sample = "Replication")
+
+# Combine the data
+combined_vol <- bind_rows(split1_vol, split2_vol)
+
+# Plot with facet
+ggplot(combined_vol, aes(y = NMI, x = Feature, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    name = "Feature Rank",
+    limits = c(1,551),
+    guide = guide_colorbar(reverse = TRUE)  # Optional: reverse so low rank = darker
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.08),
+    breaks = seq(0, 0.08, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+5. Surface Area
+```{r}
+split1_sa <- split1_nmi %>%
+  filter(grepl("smri_area", Feature)) %>%
+  arrange(Rank)
+split2_sa <- split2_nmi %>%
+  filter(grepl("smri_area", Feature)) %>%
+  arrange(Rank)
+
+split1_sa <- split1_sa %>%
+  mutate(Feature = str_remove(Feature, "smri_area_cdk_"),                  # Remove the prefix
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+split2_sa <- split2_sa %>%
+  mutate(Feature = str_remove(Feature, "smri_area_cdk_"),                  # Remove the prefix
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+# Vector of patterns and replacements
+patterns <- c("lh_rracate", "rh_rracate", "lh_precn", "rh_precn", "lh_postcn", "rh_postcn","lh_locc", "rh_locc", "rh_paracn", "lh_paracn", "rh_mdtm", "lh_mdtm",
+"lh_pericc", "rh_pericc", "rh_iftm", "lh_iftm", "lh_supl", "rh_supl","rh_sufr", "rh_sm", "lh_sm", "lh_ifpl", "rh_ifpl", "rh_parahpal","lh_pc", "rh_pc", "rh_sutm", "lh_sutm", "lh_cdmdfr", "rh_cdmdfr","lh_parahpal", "rh_parahpal", "lh_tmpole", "rh_tmpole", "rh_trvtm", "lh_trvtm","rh_frpole", "lh_frpole", "lh_ehinal", "lh_ptcate", "rh_ihcate", "rh_lobfr","lh_lobfr", "lh_ihcate", "lh_mobfr", "rh_mobfr", "lh_sufr", "lh_parsopc","rh_parsopc", "lh_rrmdfr", "rh_rrmdfr", "rh_parstgris", "lh_parstgris","rh_parsobis", "lh_parsobis", "rh_ptcate", "rh_cdacate", "lh_cdacate", "rh_ehinal", "lh_bankssts","lh_cuneus",
+"lh_fusiform","lh_insula","lh_lingual","rh_bankssts","rh_cuneus","rh_fusiform",
+"rh_insula","rh_lingual")
+
+replacements <- c("Left Rostral Anterior Cingulate", "Right Rostral Anterior Cingulate", "Left precentral", "Right precentral", "Left Post-central", "Right Post-central", "Left Lateral Occipital", "Right Lateral Occipital", "Right Paracentral", "Left Paracentral", "Right Middle Temporal", "Left Middle Temporal", "Left Pericalcarine", "Right Pericalcarine", "Right Inferior Temporal", "Left Inferior Temporal", "Left Superior Parietal", "Right Superior Parietal", "Right Superior Frontal", "Right Supramarginal", "Left Supramarginal", "Left Inferior Parietal", "Right Inferior Parietal", "Right Parahippocampal", "Left Precuneus", "Right precuneus", "Right Superior Temporal", "Left Superior Temporal", "Left Caudal Middle Frontal", "Right Caudal Middle Frontal", "Left Parahippocampal", "Right Parahippocampal", "Left Temporal Pole", "Right Temporal Pole", "Right Transverse Temporal", "Left Transverse Temporal", "Right Frontal Pole", "Left Frontal Pole", "Left Entorhinal", "Left Posterior Cingulate", "Right Isthmus Cingulate", "Right Lateral Orbitofrontal", "Left Lateral Orbitofrontal", "Left Isthmus Cingulate", 
+"Left Medial Orbitofrontal", "Right Medial Orbitofrontal", "Left Superior Frontal", "Left Parsopercularis","Right Parsopercularis", "Left Rostral Middle Frontal", "Right Rostral Middle Frontal", "Right Parstriangularis","Left Parstriangularis", "Right Parsorbitalis", "Left Parsorbitalis", "Right Posterior Cingulate", 
+"Right Caudal Anterior Cingulate", "Left Caudal Anterior Cingulate", "Right Entorhinal","Left Bankssts","Left Cuneus","Left Fusiform","Left Insula","Left Lingual","Right Bankssts","Right Cuneus","Right Fusiform","Right Insula","Right Lingual")
+
+# Function to replace labels
+replace_labels <- function(df, patterns, replacements) {
+  for(i in seq_along(patterns)) {
+    df$Feature <- gsub(patterns[i], replacements[i], df$Feature)
+  }
+  return(df)
+}
+
+# Apply to split1_sa and split2_sa
+split1_sa <- replace_labels(split1_sa, patterns, replacements)
+split2_sa <- replace_labels(split2_sa, patterns, replacements)
+
+# Add source labels
+split1_sa <- split1_sa %>%
+  mutate(Sample = "Discovery")
+
+split2_sa <- split2_sa %>%
+  mutate(Sample = "Replication")
+
+# Combine the data
+combined_sa <- bind_rows(split1_sa, split2_sa)
+
+# Plot with facet
+ggplot(combined_sa, aes(y = NMI, x = Feature, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    name = "Feature Rank",
+    limits = c(1,551),
+    guide = guide_colorbar(reverse = TRUE)  # Optional: reverse so low rank = darker
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.02),
+    breaks = seq(0, 0.02, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+6.Resting state
+```{r}
+split1_rs <- split1_nmi %>%
+  filter(grepl("rsfmri_", Feature)) %>%
+  arrange(Rank)
+split2_rs <- split2_nmi %>%
+  filter(grepl("rsfmri_", Feature)) %>%
+  arrange(Rank)
+
+# Define cortical network (ngd) mappings
+ngd_mapping <- list(
+  dla = "Dorsal Attention",
+  cerc = "Cingulo-Opercular",
+  smh = "Sensorimotor-Hand",
+  smm = "Sensorimotor-Mouth",
+  vta = "Ventral Attention",
+  cgc = "Cingulo-opercular",
+  rst = "Retrosplenial Temporal",
+  df = "Default",
+  sa = "Salience",
+  au = "Auditory",
+  vs = "Visual",
+  fopa = "Fronto-Parietal",
+  dsa = "Dorsal Attention",
+  copa = "Cingulo-Parietal",
+  none = "Unassigned",
+  ad = "Auditory",
+  ca = "Cingulo-Parietal",
+  dt = "Default Mode",
+  fo = "Fronto-Parietal",
+  n = "Non-specific",
+  rspltp = "Retrosplenial Temporal"
+)
+
+# Define subcortical structure (scs) mappings
+scs_mapping <- list(
+  bs = "Brainstem",
+  aglh = "Left amygdala",
+  pllh = "Left pallidum",
+  hplh = "Left hippocampus",
+  cderh = "Right caudate",
+  hprh = "Right hippocampus",
+  aarh = "Right accumbens",
+  ptrh = "Right putamen",
+  crcxlh = "Left cerebellar cortex",
+  plrh = "Right pallidum",
+  ptlh = "Left putamen",
+  aalh = "Left accumbens",
+  thplh = "Left thalamus",
+  thprh = "Right thalamus",
+  vtdcrh = "Right ventral DC",
+  vtdclh = "Left ventral DC",
+  agrh = "Right amygdala",
+  cdelh = "Left caudate",
+  crcxrh = "Right cerebellar cortex"
+)
+
+rename_feature <- function(feature) {
+  # Only process features that start with "rsfmri_" or "rs_"
+  if (!grepl("^rsfmri_|^rs_", feature)) {
+    return(feature)
+  }
+
+  parts <- strsplit(feature, "_")[[1]]
+
+  # Safely check for expected length
+  if (length(parts) >= 6 && (parts[2] == "cor" || parts[2] == "c")) {
+    source_network <- parts[4]
+    target_network <- parts[6]
+
+    # Rename based on available mappings
+    if (parts[5] == "scs") {
+      source_name <- ngd_mapping[[source_network]]
+      target_name <- scs_mapping[[target_network]]
+      renamed <- paste(source_name, "to", target_name)
+    } else if (parts[5] == "ngd") {
+      source_name <- ngd_mapping[[source_network]]
+      target_name <- ngd_mapping[[target_network]]
+      renamed <- paste(source_name, "to", target_name)
+    } else {
+      renamed <- feature  # fallback
+    }
+  } else {
+    renamed <- feature  # fallback if structure unexpected
+  }
+
+  return(renamed)
+}
+
+
+
+# Create a new column with renamed features
+split1_rs$Feature_Renamed <- sapply(split1_rs$Feature, rename_feature)
+split2_rs$Feature_Renamed <- sapply(split2_rs$Feature, rename_feature)
+
+# Add source labels
+split1_rs <- split1_rs %>%
+  mutate(Sample = "Discovery")
+
+split2_rs <- split2_rs %>%
+  mutate(Sample = "Replication")
+
+# Combine the data
+combined_rs <- bind_rows(split1_rs, split2_rs)
+
+combined_rs <- combined_rs %>%
+  mutate(Connection_Type = case_when(
+    grepl("_scs_", Feature) ~ "Cortical-Subcortical",
+    grepl("_ngd_", Feature) ~ "Cortical-Cortical",
+    TRUE ~ "Other"
+  ))
+
+combined_rs %>%
+  filter(Connection_Type == "Cortical-Cortical") %>%
+  ggplot(aes(y = NMI, x = Feature_Renamed, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    limits = c(1, 551),
+    guide = guide_colorbar(reverse = TRUE)
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.02),
+    breaks = seq(0, 0.02, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 6),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+combined_rs %>%
+  filter(Connection_Type == "Cortical-Subcortical") %>%
+  ggplot(aes(y = NMI, x = Feature_Renamed, fill = Rank)) +
+  geom_col(width = 0.8) +
+  scale_fill_gradientn(
+    colors = c("#A63603", "#E6550D", "#FD8D3C",  "#FDAE6B", "#FEE6CE", "#FFF5EB"),
+    limits = c(1, 551),
+    guide = guide_colorbar(reverse = TRUE)
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.02),
+    breaks = seq(0, 0.02, by = 0.02),
+    expand = expansion(mult = c(0, 0.01))
+  ) +
+  labs(
+    y = "NMI Score",
+    x = "Feature"
+  ) +
+  facet_wrap(~ Sample, nrow = 1, scales = "fixed") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+Top 15% NMI
+```{r}
+# Set value of k (e.g., top 15%)
+k <- round(length(split1_nmi$Feature)*0.15)
+
+# Get top-k features by NMI in each sample
+top_k_discovery <- split1_nmi %>%
+  arrange(desc(NMI)) %>%
+  slice_head(n = k) %>%
+  pull(Feature)
+
+top_k_replication <- split2_nmi %>%
+  arrange(desc(NMI)) %>%
+  slice_head(n = k) %>%
+  pull(Feature)
+
+# Calculate overlap
+overlap <- length(intersect(top_k_discovery, top_k_replication)) / k
+
+# Print result
+cat("Top-", k, " Overlap: ", round(overlap * 100, 1), "%\n", sep = "")
+
+# Combine into one data frame with overlap label
+top_features_df <- tibble(
+  Feature = union(top_k_discovery, top_k_replication),
+  In_Discovery = Feature %in% top_k_discovery,
+  In_Replication = Feature %in% top_k_replication
+) %>%
+  mutate(Category = case_when(
+    In_Discovery & In_Replication ~ "Both",
+    In_Discovery ~ "Discovery Only",
+    In_Replication ~ "Replication Only"
+  ))
+
+# Create Feature_Type 
+top_features_df <- top_features_df %>%
+  mutate(Feature_Type = case_when(
+    grepl("smri_thick", Feature, ignore.case = TRUE) ~ "Thickness",
+    grepl("smri_vol", Feature, ignore.case = TRUE) ~ "Volume",
+    grepl("rsfmri_cor", Feature, ignore.case = TRUE) ~ "Connectivity",
+    grepl("nihtbx|rey_|lmt_|wisc", Feature, ignore.case = TRUE) ~ "Cognition",
+    grepl("smri_area", Feature, ignore.case = TRUE) ~ "Area",
+    TRUE ~ "Environment"
+  ))
+
+top_features_df$Feature <- sapply(top_features_df$Feature, rename_feature)
+
+top_features_df <- top_features_df %>%
+  mutate(Feature = str_remove(Feature, "smri_thick_cdk_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+top_features_df <- top_features_df %>%
+  mutate(Feature = str_remove(Feature, "smri_vol_scs_"),                  
+         Feature = str_replace(Feature, "(.*)(lh|rh)$", "\\2_\\1")) 
+
+top_features_df <- replace_labels(top_features_df, patterns, replacements)
+top_features_df$Feature <- replace_vol_labels(top_features_df$Feature, vol_replacements)
+top_features_df$Feature <- replace_feature_labels(top_features_df$Feature, feature_labels)
+top_features_df$Feature <- replace_cog_labels(top_features_df$Feature, cog_labels)
+
+# Set factor levels to control the order
+top_features_df$Category <- factor(
+  top_features_df$Category,
+  levels = c("Both", "Discovery Only", "Replication Only")
+)
+
+# Reorder features by Category first, then alphabetically within each
+top_features_df <- top_features_df %>%
+  arrange(Category, Feature) %>%
+  mutate(Feature = factor(Feature, levels = rev(unique(Feature))))  
+
+# Order features by Feature_Type first, then by Feature within each type  
+top_features_df <- top_features_df %>%
+  mutate(Feature = paste0(Feature, " ", Feature_Type))
+top_features_df <- top_features_df %>%
+  arrange(Category, Feature_Type, Feature) %>%
+  mutate(Feature = factor(Feature, levels = rev(unique(Feature))))
+# Plot
+ggplot(top_features_df, aes(x = Feature, fill = Category)) +
+  geom_bar(width = 0.7) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c(
+      "Both" = "#1b9e77",           # green-teal
+      "Discovery Only" = "#d95f02", # orange
+      "Replication Only" = "#7570b3" # purple
+    )
+  )+
+  labs(
+    title = "Top 15% Features",
+    subtitle = paste0("Overlap: ", round(overlap * 100, 1), "%"),
+    x = NULL,
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(size = 5, hjust = 1),
+    axis.text.x = element_text(size = 10),
+    axis.title.y = element_text(size = 10),
+    axis.title.x = element_text(size = 10),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 13),
+    panel.grid.major.y = element_blank()
+  )
+```
