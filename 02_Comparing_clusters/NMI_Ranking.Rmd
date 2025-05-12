@@ -774,7 +774,7 @@ ggplot(top_features_df, aes(x = Feature, fill = Category)) +
   ) +
   theme_minimal(base_size = 13) +
   theme(
-    axis.text.y = element_text(size = 5, hjust = 1),
+    axis.text.y = element_text(size = 4, hjust = 1),
     axis.text.x = element_text(size = 10),
     axis.title.y = element_text(size = 10),
     axis.title.x = element_text(size = 10),
