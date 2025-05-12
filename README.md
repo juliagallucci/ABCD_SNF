@@ -1,18 +1,11 @@
 # Project Overview
 This repository contains R Markdown scripts for processing, visualizing, and analyzing multimodal data—including neural, cognitive, and environmental metrics—to identify subgroups of youth with distressing psychotic-like experiences.
 
-## Script Summaries
-- **Effect_Size_Plotting.Rmd**
-Creates brain plots and heatmaps to visualize neural effect sizes (t-statistics) comparing clusters with nonPLE group.
+Multimodal Integration of Neural, Cognitive, and Environmental Metrics to Identify Subgroups of Youth with Distressing Psychotic-Like Experiences
 
-- **NMI_Ranking.Rmd**
-Plots normalized mutual information (NMI) scores to rank feature importance across discovery and replication datasets.
+4 folders:
 
-- **Similarity_Matrix.Rmd**
-Visualizes participant-level similarity matrices derived from SNF, annotated by data-driven group labels for both discovery and replication samples.
-
-- **comparing_clusters.Rmd**
-Assesses differences across clusters within each data modality using linear models and ANOVAs, and generates visualizations.
-
-- **Longitudinal_Analysis_PLE.Rmd**
-Performs longitudinal trajectory modeling of Total PLE scores across baseline, Year 1, and Year 2 using LCGA and GMM.
+01. The SNF Analysis
+02. Comparing clusters
+03. Stability of clusters
+04. Out-of-model comparisons
