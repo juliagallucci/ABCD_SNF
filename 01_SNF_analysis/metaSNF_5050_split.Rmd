@@ -1,0 +1,553 @@
+---
+title: "metaSNF_5050_split"
+author: "Julia Gallucci"
+date: "2025-02-19"
+output: html_document
+---
+
+Load in libraries
+```{r}
+#install.packages("SNFtool")
+library(dplyr)
+library(SNFtool)
+#install.packages("devtools")
+library(devtools)
+#devtools::install_github("BRANCHlab/metasnf")
+library(metasnf)
+#install.packages("car")
+library(car)
+#install.packages("future") #for parrallel processing
+library(future)
+#install.packages("future.apply")
+library(future.apply)
+library(dplyr)
+library(InteractiveComplexHeatmap)
+```
+
+Import data types
+```{r}
+#Import different datatypes 
+subjects <- read.csv("/projects/jgallucci/abcd/code/snf/input/complete_sample.csv", header=TRUE)
+CT <- read.csv("/projects/jgallucci/abcd/code/snf/input/cortthick_input.csv", header=TRUE)
+SA <- read.csv("/projects/jgallucci/abcd/code/snf/input/surfarea_input.csv", header=TRUE)
+VOL <- read.csv("/projects/jgallucci/abcd/code/snf/input/volume_input.csv", header=TRUE)
+RS <- read.csv("/projects/jgallucci/abcd/code/snf/input/restingstate_input.csv", header=TRUE)
+COG <- read.csv("/projects/jgallucci/abcd/code/snf/input/cognition_input_discovery.csv", header=TRUE)
+ENV <- read.csv("/projects/jgallucci/abcd/code/snf/input/environment_input_discovery.csv", header=TRUE)
+
+#Put back subject ids to each df
+CT$src_subject_id = subjects$src_subject_id
+SA$src_subject_id = subjects$src_subject_id
+VOL$src_subject_id = subjects$src_subject_id
+RS$src_subject_id = subjects$src_subject_id
+COG$src_subject_id = subjects$src_subject_id
+ENV$src_subject_id = subjects$src_subject_id
+```
+
+Putting everything in a list will help us get quicker summaries of all the data.
+It should only contain the input dataframes we want to directly use as inputs for the clustering
+```{r}
+#Setting up the dataframe, will removing any missing data points across dataframes to ensure 
+#that each df has same number of participants
+data_list <- generate_data_list(
+  list(CT, "cortical_thickness", "neuroimaging", "continuous"),
+  list(SA, "cortical_surface_area", "neuroimaging", "continuous"),
+  list(VOL, "subcortical_volume", "neuroimaging", "continuous"),
+  list(RS, "resting_state", "neuroimaging", "continuous"),
+  list(COG, "cog", "neurocog", "continuous"),
+  list(ENV, "environmental", "demographics", "continuous"),
+  uid = "src_subject_id"
+)
+
+#Summarizing the included data in the list
+summarize_dl(data_list)
+```
+
+Each input dataframe now has the same 1716 subjects with complete data. The width refers to the number of columns in each dataframe, which equals 1 for the UID (src_subject_id) column + the number of features in the dataframe.
+
+We’re interested in knowing if any of the clustering solutions we generate can distinguish children apart based on their cbcl and weighted PLE scores. To do this, we’ll also create a data list storing only features that we’ll use for evaluating our cluster solutions and not for the clustering itself. We’ll refer to this as the “target_list”.
+
+Load in target data.
+```{r}
+#Load in the data you will use as target varibles 
+ple_data <- read.csv("/projects/tsecara/ABCD_julia/data/5.1/mental-health/mh_y_pps.csv", header = TRUE)
+ple_data = ple_data[ple_data$eventname == "baseline_year_1_arm_1",]
+ple_data <- ple_data[(ple_data$src_subject_id %in% subjects$src_subject_id),]
+
+# If there is no distress score, value is made 0 or 1 and if there is a distress score that score is added to 1 indicating that that score is experienced
+for (i in 1:21){
+  ple_data[[paste0("prodromal_",i, "_y")]] <- ifelse(is.na(ple_data[[paste0("prodromal_",i, "b_y")]]), ple_data[[paste0("prodromal_",i, "_y")]], ple_data[[paste0("prodromal_",i, "b_y")]]+ple_data[[paste0("prodromal_",i, "_y")]])
+}
+ple_data <- ple_data %>% dplyr::select(starts_with("prodromal_") & !ends_with("b_y") | starts_with("src_subject_id"))
+ple_data$total_score <- rowSums(ple_data[,1:21], na.rm = TRUE)
+ple_data <- merge(ple_data, subjects, by="src_subject_id")
+
+ple_data <- ple_data[, c("src_subject_id", "total_score")]
+ple_data$total_score
+ple_data <- na.omit(ple_data)
+
+target_list <- generate_data_list(
+  list(ple_data, "prodromal_psychosis_level", "behaviour", "numeric"),
+  uid = "src_subject_id"
+)
+summarize_dl(target_list)
+```
+
+Splitting data into 2 (50 50 split).
+```{r}
+set.seed(123)
+# All the subjects present in all dataframes with no NAs
+all_subjects <- data_list[[1]]$"data"$"subjectkey"
+
+# Remove the "subject_" prefix to allow merges with the original data
+all_subjects <- gsub("subject_", "", all_subjects)
+
+# Dataframe assigning 80% of subjects to train and 20% to test
+#assigned_splits <- train_test_assign(train_frac = 0.8, subjects = all_subjects)
+#WILLL BE USE ALTNERATIVE METHOD, using stratification to include equal proportions of age and group 
+
+
+library(dplyr)
+# Stratified sampling using dplyr
+split_data <- subjects %>%
+  sample_frac(0.5)
+
+
+# Pulling the training and testing subjects specifically
+split1_sub <- split_data$src_subject_id
+split2_sub <- setdiff(subjects$src_subject_id, split_data$src_subject_id)
+
+
+#demographics
+demo <- read.csv("/projects/jgallucci/abcd/code/snf/input/complete_sample.csv", header=TRUE)
+split1_demo <- demo[demo$src_subject_id %in% split1_sub,]
+split2_demo <- demo[demo$src_subject_id %in% split2_sub,]
+
+# Convert demo_sex_v2 to a factor if it's not already
+split1_demo$demo_sex_v2 <- factor(split1_demo$demo_sex_v2)
+split2_demo$demo_sex_v2 <- factor(split2_demo$demo_sex_v2)
+
+t.test(split1_demo$interview_age, split2_demo$interview_age) #nonsig p=0.275
+prop.table(table(split1_demo$demo_sex_v2)) #50.34, 49.65
+prop.table(table(split2_demo$demo_sex_v2)) #48.72 ,51.17, 0.12
+
+# Calculate proportions for split1_demo
+prop.table(table(split1_demo$site_id_l))
+# Calculate proportions for split2_demo
+prop.table(table(split2_demo$site_id_l))
+# View the proportions
+train_proportions
+test_proportions
+
+#Train input
+split1_CT <- CT[CT$"src_subject_id" %in% split1_sub, ]
+split1_SA <- SA[SA$"src_subject_id" %in% split1_sub, ]
+split1_VOL <- VOL[VOL$"src_subject_id" %in% split1_sub, ]
+split1_RS <- RS[RS$"src_subject_id" %in% split1_sub, ]
+split1_COG <- COG[COG$"src_subject_id" %in% split1_sub, ]
+split1_ENV <- ENV[ENV$"src_subject_id" %in% split1_sub, ]
+
+#train target
+split1_ple_data <- ple_data[ple_data$"src_subject_id" %in% split1_sub, ]
+split1_cbcl_anxdep <- cbcl_anxdep[cbcl_anxdep$"src_subject_id" %in% split1_sub, ]
+split1_cbcl_withdep <- cbcl_withdep[cbcl_withdep$"src_subject_id" %in% split1_sub, ]
+
+#Test input 
+split2_CT <- CT[CT$"src_subject_id" %in% split2_sub, ]
+split2_SA <- SA[SA$"src_subject_id" %in% split2_sub, ]
+split2_VOL <- VOL[VOL$"src_subject_id" %in% split2_sub, ]
+split2_RS <- RS[RS$"src_subject_id" %in% split2_sub, ]
+split2_COG <- COG[COG$"src_subject_id" %in% split2_sub, ]
+split2_ENV <- ENV[ENV$"src_subject_id" %in% split2_sub, ]
+
+
+#Target variables 
+split2_ple_data <- ple_data[ple_data$"src_subject_id" %in% split2_sub, ]
+split2_cbcl_anxdep <- cbcl_anxdep[cbcl_anxdep$"src_subject_id" %in% split2_sub, ]
+split2_cbcl_withdep <- cbcl_withdep[cbcl_withdep$"src_subject_id" %in% split2_sub, ]
+```
+
+Construct data lists for splits
+```{r}
+# Construct the data lists
+split1_data_list <- generate_data_list(
+  list(split1_CT, "cortical_thickness", "neuroimaging", "continuous"),
+  list(split1_SA, "cortical_surface_area", "neuroimaging", "continuous"),
+  list(split1_VOL, "subcortical_volume", "neuroimaging", "continuous"),
+  list(split1_RS, "resting_state", "neuroimaging", "continuous"),
+  list(split1_COG, "cog", "neurocog", "continuous"),
+  list(split1_ENV, "environmental", "demographic", "continuous"),
+  uid = "src_subject_id"
+)
+
+split2_data_list <- generate_data_list(
+  list(split2_CT, "cortical_thickness", "neuroimaging", "continuous"),
+  list(split2_SA, "cortical_surface_area", "neuroimaging", "continuous"),
+  list(split2_VOL, "subcortical_volume", "neuroimaging", "continuous"),
+  list(split2_RS, "resting_state", "neuroimaging", "continuous"),
+  list(split2_COG, "cog", "neurocog", "continuous"),
+  list(split2_ENV, "environmental", "demographic", "continuous"),
+  uid = "src_subject_id"
+)
+full_data_list <- generate_data_list(
+  list(CT, "cortical_thickness", "neuroimaging", "continuous"),
+  list(SA, "cortical_surface_area", "neuroimaging", "continuous"),
+  list(VOL, "subcortical_volume", "neuroimaging", "continuous"),
+  list(RS, "resting_state", "neuroimaging", "continuous"),
+  list(COG, "cog", "neurocog", "continuous"),
+  list(ENV, "environmental", "demographic", "continuous"),
+  uid = "src_subject_id"
+)
+
+# Construct the target lists
+split1_target_list <- generate_data_list(
+  list(split1_cbcl_anxdep, "anxious_depressed", "behaviour", "numeric"),
+  list(split1_cbcl_withdep, "withdrawn_depressed", "behaviour", "numeric"),
+  list(split1_ple_data, "prodromal_psychosis_level", "behaviour", "numeric"),
+  uid = "src_subject_id"
+)
+
+split2_target_list <- generate_data_list(
+  list(split2_cbcl_anxdep, "anxious_depressed", "behaviour", "numeric"),
+  list(split2_cbcl_withdep, "withdrawn_depressed", "behaviour", "numeric"),
+  list(split2_ple_data, "prodromal_psychosis_level", "behaviour", "numeric"),
+  uid = "src_subject_id"
+)
+```
+
+Defining sets of hyperparameters to use for SNF and clustering
+```{r}
+####### Adding specific options for the metaSNF (such as the potential to enable standarization, and to specific a specific cluster 
+####### number or a range of cluster numbers)
+
+### Having option for standaization  - you will specifiy this flag in the setting matrix 
+my_distance_metrics <- generate_distance_metrics_list(
+  continuous_distances = list(
+    "standard_norm_euclidean" = sn_euclidean_distance
+  ),
+  discrete_distances = list(
+    "standard_norm_euclidean" = sn_euclidean_distance
+  ),
+  ordinal_distances = list(
+    "standard_norm_euclidean" = sn_euclidean_distance
+  ),
+  categorical_distances = list(
+    "standard_norm_euclidean" = gower_distance
+  ),
+  mixed_distances = list(
+    "standard_norm_euclidean" = gower_distance
+  ),
+  keep_defaults = FALSE
+)
+
+#pre-selecting the cluster size - you will also specific this in the setting matrix 
+my_spectral_eigen <- function(similarity_matrix) {
+  estimated_n <- SNFtool::estimateNumberOfClustersGivenGraph(
+    W = similarity_matrix,
+    NUMC = 2:10 ### ADJUST THIS BASED ON RANGE OF CLUSTER NUMBER YOU WANT
+  )
+  number_of_clusters <- estimated_n$`Eigen-gap best`
+  solution <- SNFtool::spectralClustering(
+    similarity_matrix,
+    number_of_clusters
+  )
+  solution_data <- list("solution" = solution, "nclust" = number_of_clusters)
+  return(solution_data)
+}
+my_spectral_rot <- function(similarity_matrix) {
+  estimated_n <- SNFtool::estimateNumberOfClustersGivenGraph(
+    W = similarity_matrix,
+    NUMC = 2:10 ### ADJUST THIS BASED ON RANGE OF CLUSTER NUMBER YOU WANT
+  )
+  number_of_clusters <- estimated_n$`Rotation cost best`
+  solution <- SNFtool::spectralClustering(
+    similarity_matrix,
+    number_of_clusters
+  )
+  solution_data <- list("solution" = solution, "nclust" = number_of_clusters)
+  return(solution_data)
+}
+clust_algs_list <- generate_clust_algs_list(
+  "my_first_function" = my_spectral_eigen,
+  "my_second_function" = my_spectral_rot,
+  disable_base = TRUE # important!
+)
+
+#Generating the settings matrix - this will determine how the meta-cluters are generated 
+split1_settings_matrix <- generate_settings_matrix(
+  split1_data_list,
+  nrow = 722, #the size of the clustering solution you would like to span 
+  min_k = 30,
+  max_k = 60,
+  dropout_dist = "none", #if you want uniform dropout of data types 
+  distance_metrics_list = my_distance_metrics, #if you want standarization, can comment out otherwise 
+  #clustering_algorithms = clust_algs_list,     #if you want a specific cluster number, can comment out otherwise 
+  set.seed(42)
+)
+
+split2_settings_matrix <- generate_settings_matrix(
+  split2_data_list,
+  nrow = 722, #the size of the clustering solution you would like to span 
+  min_k = 30,
+  max_k = 60,
+  dropout_dist = "none", #if you want uniform dropout of data types 
+  distance_metrics_list = my_distance_metrics, #if you want standarization, can comment out otherwise 
+  #clustering_algorithms = clust_algs_list,     #if you want a specific cluster number, can comment out otherwise 
+  set.seed(42)
+)
+```
+
+Running SNF and clustering
+```{r}
+#With parallel processing 
+split1_solutions_matrix <- batch_snf(
+  split1_data_list, 
+  split1_settings_matrix,
+  distance_metrics_list = my_distance_metrics, #standardization 
+  clust_algs_list = clust_algs_list, #specifying cluster range 
+  #weights_matrix = weights_matrix,  #can also give it a weights matrix 
+  processes = 16  #check to see how many your computer has, and then subtract 4 from it 
+)
+```
+
+```{r}
+#With parallel processing 
+split2_solutions_matrix <- batch_snf(
+  split2_data_list, 
+  split2_settings_matrix,
+  distance_metrics_list = my_distance_metrics, #standardization 
+  clust_algs_list = clust_algs_list, #specifying cluster range 
+  #weights_matrix = weights_matrix,  #can also give it a weights matrix 
+  processes = 16  #check to see how many your computer has, and then subtract 4 from it 
+)
+```
+
+```{r}
+#Extracting the metacluster order for the training set 
+split1_solutions_matrix_aris <- calc_aris(split1_solutions_matrix, processes = 16)
+split1_meta_cluster_order <- get_matrix_order(split1_solutions_matrix_aris)
+
+adjusted_rand_index_heatmap(
+  split1_solutions_matrix_aris,
+  order = split1_meta_cluster_order
+)
+
+split1_ari_hm <- adjusted_rand_index_heatmap(
+  split1_solutions_matrix_aris,
+  order = split1_meta_cluster_order
+)
+shiny_annotator(split1_ari_hm)
+```
+Divide the heatmap into meta clusters by visual inspection
+```{r}
+#selecting clusters 
+split_vec <- c(235, 510, 620)
+
+
+ari_mc_hm <- adjusted_rand_index_heatmap(
+  split1_solutions_matrix_aris,
+  order = split1_meta_cluster_order,
+  split_vector = split_vec
+)
+ari_mc_hm
+```
+Characterizing cluster solutions
+
+Run the extend_solutions function, which will calculate p-values representing the strength of the association between cluster membership (treated as a categorical feature) and any feature present in a provided data list and/or target_list.
+
+Extend_solutions also adds summary p-value measures (min, mean, and max) of any features present in the target list.
+```{r}
+split1_extended_solutions_matrix <- extend_solutions(
+  split1_solutions_matrix,
+  data_list = split1_data_list,
+  target_list = split1_target_list,
+  processes = 16
+)
+```
+
+Visualizing feature associations with meta clustering results
+`Adjusted_rand_index_heatmap` function to easily visualize the level of separation on each of our features for each of our cluster solutions.
+```{r}
+#creating the metacluster visulization 
+annotated_ari_hm <- adjusted_rand_index_heatmap(
+  split1_solutions_matrix_aris,
+  order = split1_meta_cluster_order,
+  split_vector = split_vec,
+  data = split1_extended_solutions_matrix,
+  top_hm = list(
+    "PLE Weighted p-value" = "total_score_pval"
+  ),
+  bottom_bar = list(
+    "Number of Clusters" = "nclust",
+    "K Hyperparam" = "k",
+    "Alpha" = "alpha"
+  ),
+  annotation_colours = list(
+    "PLE Weighted p-value" = colour_scale(
+      split1_extended_solutions_matrix$"total_score_pval",
+      min_colour = "purple",
+      max_colour = "black"
+    )
+  )
+)
+
+annotated_ari_hm
+```
+
+
+SPLIT 1
+```{r}
+#split_vec<- c(235, 510, 620)
+
+#Once determining the top clustering solution, extracting it and examining it in terms of extended matrix solution 
+solutions_matrix_aris2 <- split1_solutions_matrix_aris[split1_meta_cluster_order, split1_meta_cluster_order]
+#solutions_matrix_aris3 <- solutions_matrix_aris2[1:234, 1:234] #meta cluster a
+solutions_matrix_aris3 <- solutions_matrix_aris2[235:509, 235:509] #meta cluster b
+#solutions_matrix_aris3 <- solutions_matrix_aris2[510:619, 510:619] #meta cluster d
+#solutions_matrix_aris3 <- solutions_matrix_aris2[620:722, 620:722] #meta cluster d
+
+# Create a copy of the matrix to avoid modifying the original
+matrix_mod <- solutions_matrix_aris3
+
+# Replace the diagonal values with NA
+diag(matrix_mod) <- NA
+
+# Compute the average ARI score for each row, ignoring NA values
+average_ari_scores <- rowMeans(matrix_mod, na.rm = TRUE)
+
+# Find the indices of the top 10 highest average ARI scores
+top_10_avg_indices <- order(average_ari_scores, decreasing = TRUE)[1:10]
+
+# Extract the row labels for the top 10 rows
+row_labels_with_top_10_avg_scores <- rownames(matrix_mod)[top_10_avg_indices]
+row_labels_with_top_10_avg_scores
+
+# Retrieve the corresponding rows from extended_solutions_matrix
+final_solutions <- split1_extended_solutions_matrix %>%
+  filter(row_id %in% row_labels_with_top_10_avg_scores)
+
+# Display the final solutions
+print(final_solutions)
+
+# Finding the row with the lowest minimum p-value across our outcomes
+which(final_solutions$"total_score_pval" ==
+        min(final_solutions$"total_score_pval"))
+
+
+# Keep track of your top solution
+top_row_split1 <- final_solutions[4,]
+```
+
+
+
+```{r}
+#Extracting the metacluster order for the training set 
+split2_solutions_matrix_aris <- calc_aris(split2_solutions_matrix, processes = 16)
+split2_meta_cluster_order <- get_matrix_order(split2_solutions_matrix_aris)
+
+adjusted_rand_index_heatmap(
+  split2_solutions_matrix_aris,
+  order = split2_meta_cluster_order
+)
+
+split2_ari_hm <- adjusted_rand_index_heatmap(
+  split2_solutions_matrix_aris,
+  order = split2_meta_cluster_order
+)
+shiny_annotator(split2_ari_hm)
+```
+Divide the heatmap into meta clusters by visual inspection
+```{r}
+#selecting clusters 
+split_vec2 <- c(9,128, 404, 472)
+
+
+ari_mc_hm2 <- adjusted_rand_index_heatmap(
+  split2_solutions_matrix_aris,
+  order = split2_meta_cluster_order,
+  split_vector = split_vec2
+)
+ari_mc_hm2
+```
+
+```{r}
+split2_extended_solutions_matrix <- extend_solutions(
+  split2_solutions_matrix,
+  data_list = split2_data_list,
+  target_list = split2_target_list,
+  processes = 16
+)
+```
+
+Visualizing feature associations with meta clustering results
+`Adjusted_rand_index_heatmap` function to easily visualize the level of separation on each of our features for each of our cluster solutions.
+```{r}
+#creating the metacluster visulization 
+annotated_ari_hm <- adjusted_rand_index_heatmap(
+  split2_solutions_matrix_aris,
+  order = split2_meta_cluster_order,
+  split_vector = split_vec2,
+  data = split2_extended_solutions_matrix,
+  top_hm = list(
+    "PLE Weighted p-value" = "total_score_pval"
+  ),
+  bottom_bar = list(
+    "Number of Clusters" = "nclust",
+    "K Hyperparam" = "k",
+    "Alpha" = "alpha"
+  ),
+  annotation_colours = list(
+    "PLE Weighted p-value" = colour_scale(
+      split2_extended_solutions_matrix$"total_score_pval",
+      min_colour = "purple",
+      max_colour = "black"
+    )
+  )
+)
+
+annotated_ari_hm
+```
+SPLIT 2
+```{r}
+#split_vec2 <- c(9,128, 404, 472)
+
+#Once determining the top clustering solution, extracting it and examining it in terms of extended matrix solution 
+solutions_matrix_aris2_split2 <- split2_solutions_matrix_aris[split2_meta_cluster_order, split2_meta_cluster_order]
+#solutions_matrix_aris3 <- solutions_matrix_aris2[1:9, 1:9] #meta cluster a
+#solutions_matrix_aris3_split2 <- split2_solutions_matrix_aris2[10:128, 10:128] #meta cluster b
+solutions_matrix_aris3_split2 <- split2_solutions_matrix_aris[129:404, 129:404] #meta cluster c
+#solutions_matrix_aris3 <- solutions_matrix_aris2[405:472, 405:472] #meta cluster d
+#solutions_matrix_aris3 <- solutions_matrix_aris2[473:722, 473:722] #meta cluster e
+
+# Create a copy of the matrix to avoid modifying the original
+matrix_mod_split2 <- solutions_matrix_aris3_split2
+
+# Replace the diagonal values with NA
+diag(matrix_mod_split2) <- NA
+
+# Compute the average ARI score for each row, ignoring NA values
+average_ari_scores_split2 <- rowMeans(matrix_mod_split2, na.rm = TRUE)
+
+# Find the indices of the top 10 highest average ARI scores
+top_10_avg_indices_split2 <- order(average_ari_scores_split2, decreasing = TRUE)[1:10]
+
+# Extract the row labels for the top 10 rows
+row_labels_with_top_10_avg_scores_split2 <- rownames(matrix_mod_split2)[top_10_avg_indices_split2]
+row_labels_with_top_10_avg_scores_split2
+
+# Retrieve the corresponding rows from extended_solutions_matrix
+final_solutions_split2 <- split2_extended_solutions_matrix %>%
+  filter(row_id %in% row_labels_with_top_10_avg_scores_split2)
+
+# Display the final solutions
+print(final_solutions_split2)
+
+# Finding the row with the lowest minimum p-value across our outcomes
+which(final_solutions_split2$"total_score_pval" ==
+        min(final_solutions_split2$"total_score_pval"))
+
+
+# Keep track of your top solution
+
+top_row_split2 <- final_solutions[2,]
+```
