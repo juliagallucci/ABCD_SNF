@@ -1,0 +1,439 @@
+---
+title: "post-bootstrap_visualizations"
+output: html_document
+date: "2025-03-20"
+---
+```{r}
+library(corrplot)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(reshape)
+library(extrafont)
+```
+
+```{r}
+# Final SNF clusters; replace with split 1 for discovery or 2 for replication
+clusters <- read.csv("/projects/jgallucci/abcd/output/5_Clust/Split_2/Split2_RESULTS_5_clust_k44_0.7.csv")
+
+#RUN THE FOLLOWING LINES ONLY FOR SPLIT 2, TO MATCH ORDERING OF SPLIT 1
+clusters <- clusters %>%
+  dplyr::mutate(groups = as.character(groups)) %>%
+  dplyr::mutate(groups = dplyr::recode(groups,
+                                       "1" = "temp1",
+                                       "2" = "temp2",
+                                       "3" = "temp3",
+                                       "4" ="temp4",
+                                       "5" = "temp5")) %>%
+  dplyr::mutate(groups = dplyr::recode(groups,
+                                       "temp1" = "5",
+                                       "temp2" = "1",
+                                       "temp3" = "2",
+                                       "temp4" ="3",
+                                       "temp5" = "4")) %>%
+  dplyr::mutate(groups = as.numeric(groups))
+```
+
+```{r}
+# Function to insert a row into a data frame
+insertRow <- function(existingDF, newrow, r) {
+  existingDF[seq(r + 1, nrow(existingDF) + 1),] <- existingDF[seq(r, nrow(existingDF)),]
+  existingDF[r,] <- newrow
+  existingDF
+}
+
+# Function to plot the percentage agreement for each group
+plot_group_agreement <- function(group_num, pa, num_subs, directory) {
+  group_data <- pa[which(pa$groups == as.character(group_num) | pa$groups == "0"), 
+                   which(pa[1,] == as.character(group_num) | pa[1,] == "0")]
+  group_data <- group_data[-1, -1]  # Remove group labels row/column
+  group_data <- as.data.frame(sapply(group_data, as.numeric))
+  
+  # Plotting
+  png(file.path(directory, paste("Group", group_num, "_PercentAgree_5clusters.png", sep="")))
+  corrplot(as.matrix(group_data), cl.lim = c(0, 1), method = "color", order = "hclust")
+  dev.off()
+  
+  # Calculating group averages
+  subs = seq(1, nrow(group_data))
+  group_avgs = data.frame("ID" = subs, "avg_percent" = numeric(length(subs)))
+  for (sub in subs) {
+    # Avoid division by zero
+    non_zero_count = num_subs - rowSums(group_data[sub, ] == 0)
+    group_avgs[sub, 2] <- ifelse(non_zero_count > 0, rowSums(group_data[sub, ]) / non_zero_count, NA)
+  }
+  return(group_avgs)
+}
+
+# Loading CSVs of each data type (no headers)
+directory <- ("/projects/jgallucci/abcd/output/Split2_Stability_C5")
+num_subs <- 858
+percent_agree_5 <- read.csv(file.path(directory, "Percent_agree_5c_1000perms.csv"))
+percent_agree_5$X <- NULL
+# Assume rownames(percent_agree_5) are just "1" to "858" – replace with real IDs
+rownames(percent_agree_5) <- clusters$src_subject_id  # overwrite with correct IDs
+colnames(percent_agree_5) <- clusters$src_subject_id  # must match exactly
+
+# Sanity check: now rows match subjects
+all(rownames(percent_agree_5) == clusters$src_subject_id)  # should be TRUE now
+
+nonrandindex <- read.csv(file.path(directory, "Rand_indices_5c_1000perms.csv"))
+nonrandindex$X <- NULL
+randindex <- nonrandindex[, 1:1000]
+adjrandindex <- nonrandindex[, 1001:2000]
+
+# Renaming percent agreement and adding cluster column
+pa <- percent_agree_5
+pa$groups <- clusters$groups
+
+# Makes groups the first column
+pa <- pa[, c((num_subs + 1), 1:num_subs)]
+clusts <- c(0, clusters$groups)
+pa <- insertRow(pa, clusts, 1)
+
+## Plotting group-wise percentage agreements
+group_avgs_all <- list()
+
+# Loop over groups 1 to 5 to generate plots and averages
+for (group_num in 1:5) {
+  group_avgs_all[[paste("Group", group_num)]] <- plot_group_agreement(group_num, pa, num_subs, directory)
+}
+
+# Plotting the "all" group
+all <- pa
+all[1, ] <- all[, 1]
+all <- all[order(all$groups), ]
+all <- all[, order(as.numeric(all[1, ]))]
+all <- all[-1, -1]
+all <- as.data.frame(sapply(all, as.numeric))
+
+png(file.path(directory, "all_PercentAgree_5clusters.png"))
+corrplot(as.matrix(all), cl.lim = c(0, 1), method = "color")
+dev.off()
+
+# Optionally, calculate and save "all" group averages if necessary
+ subs = seq(1, nrow(all))
+ all_avgs = data.frame("ID" = subs, "avg_percent" = numeric(length(subs)))
+ for (sub in subs) {
+   non_zero_count = num_subs - rowSums(all[sub, ] == 0)
+   all_avgs[sub, 2] <- ifelse(non_zero_count > 0, rowSums(all[sub, ]) / non_zero_count, NA)
+ }
+
+```
+
+## Getting the mean participant agreement within and across groups
+
+```{r, echo=FALSE}
+## mean for each group
+no_nums <- all
+
+# within group 1
+one <- no_nums[1:85, 1:85] # split2
+#one <- no_nums[1:102, 1:102] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one)) #number of subjects
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+
+first_group_mean <- mean(one_avgs$avg_percent)
+
+# group 1 and 2
+one <- no_nums[1:85, 86:313] #split2
+#one <- no_nums[1:102, 103:349] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+first_second <- mean(one_avgs$avg_percent)
+print(first_second*100)
+
+# group 1 and group 3
+one <- no_nums[1:85, 314:493] #split2
+#one <- no_nums[1:102, 350:520] split1
+one <- as.data.frame(sapply(one, as.numeric))
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+first_third <- mean(one_avgs$avg_percent)
+print(first_third*100)
+
+# group 1 and group 4
+one <- no_nums[1:85, 494:620] #split2
+#one <- no_nums[1:102, 521:679] split1
+one <- as.data.frame(sapply(one, as.numeric))
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+first_fourth <- mean(one_avgs$avg_percent)
+print(first_fourth*100)
+
+# group 1 and group 5
+one <- no_nums[1:85, 621:858] #split2
+#one <- no_nums[1:102, 680:858] split1
+one <- as.data.frame(sapply(one, as.numeric))
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+first_fifth <- mean(one_avgs$avg_percent)
+print(first_fifth*100)
+
+# withing group 2
+no_nums <- all
+one <- no_nums[86:313, 86:313] #split2
+#one <- no_nums[103:349, 103:349] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+second <- mean(one_avgs$avg_percent)
+print(second*100)
+
+# group 2 and group 3
+one <- no_nums[86:313, 314:493]
+#one <- no_nums[103:349, 350:520] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+second_third <- mean(one_avgs$avg_percent)
+print(second_third*100)
+
+# group 2 and group 4
+one <- no_nums[86:313, 494:620]
+#one <- no_nums[103:349, 521:679] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+second_fourth <- mean(one_avgs$avg_percent)
+print(second_fourth*100)
+
+# group 2 and group 5
+one <- no_nums[86:313, 621:858] #split2
+#one <- no_nums[103:349, 680:858] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+second_fifth <- mean(one_avgs$avg_percent)
+print(second_fifth*100)
+
+# group 3 and group 4
+one <- no_nums[314:493, 494:620]
+#one <- no_nums[350:520, 521:679] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+third_fourth <- mean(one_avgs$avg_percent)
+print(third_fourth*100)
+# group 3 and group 5
+one <- no_nums[314:493, 621:858] #split2
+#one <- no_nums[350:520, 680:858] #split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+third_fifth <- mean(one_avgs$avg_percent)
+print(third_fifth*100)
+
+# group 4 and group 5
+one <- no_nums[494:620, 621:858]
+#one <- no_nums[521:679, 680:858] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+fourth_fifth <- mean(one_avgs$avg_percent)
+print(fourth_fifth*100)
+
+# within group 3
+one <- no_nums[314:493, 314:493]
+#one <- no_nums[350:520, 350:520] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+third <- mean(one_avgs$avg_percent)
+print(third*100)
+# within group 4
+one <- no_nums[494:620, 494:620] #split2
+#one <- no_nums[521:679, 521:679] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+fourth <- mean(one_avgs$avg_percent)
+print(fourth*100)
+
+# within group 5
+one <- no_nums[621:858, 621:858]
+#one <- no_nums[680:858, 680:858] split1
+one <- as.data.frame(sapply(one, as.numeric))
+
+subs=seq(1,length(one))
+one_avgs = data.frame("ID"=subs,"avg_percent"=numeric(length(subs)))
+for (sub in subs){
+  one_avgs[subs, 2] <- (rowSums(one[subs,]) - 1)/(length(one) - 1)
+}
+one_avgs <- na.omit(one_avgs)
+fifth <- mean(one_avgs$avg_percent)
+print(fifth*100)
+```
+
+## Calculating the average adjusted rand index for the 4 clusters
+
+```{r, echo=FALSE}
+## getting the average adj list rand for 4 clusters
+list_randindex_5 <- randindex
+list_randindex_5$Column <- seq(1:length(list_randindex_5[,1]))
+index <- melt(list_randindex_5, id.vars=c('Column'),var='Index')
+index <- na.omit(index)
+index$cluster_num <- "5 Clusters"
+mean(index$value) # 0.83
+
+adjrandindex <- adjrandindex
+adjrandindex$Column <- seq(1:length(adjrandindex[,1]))
+adjrandindex <- melt(adjrandindex, id.vars=c('Column'),var='Index')
+adjrandindex <- na.omit(adjrandindex)
+adjrandindex$cluster_num <- "5 Clusters"
+mean(adjrandindex$value) # 0.48
+
+```
+
+## Plotting the number of times that a feature was in the top 35 features based on NMI
+
+```{r, echo=FALSE}
+top_NMI_measures <- data.frame(matrix(0, nrow = 35, ncol = 1000))
+
+# narrowing down order of features to the top 35 from the NMI file
+i=1
+for (i in seq(1:length(NMI))) {
+  intermediate <- NMI[ , i]
+  intermediate <- cbind(measures, intermediate)
+  intermediate$intermediate <- as.numeric(as.character(intermediate$intermediate))
+  intermediate <- intermediate[order(-intermediate$intermediate), ]
+
+  top_NMI_measures[ ,i] <- intermediate[1:35, 1]
+}
+
+top_measures <- top_NMI_measures
+top_measures$Column <- seq(1:length(top_measures[,1]))
+top_measures <- melt(top_measures, id.vars=c('Column'),var='Index')
+top_measures$Column <- NULL
+top_measures$Index <- NULL
+
+# One variable short - because it was in the top 35 zero times
+measure_count <- as.data.frame(table(top_measures$value))
+names(measure_count)[names(measure_count) == "Var1"] <- "Measures"
+measure_count <- measure_count[order(measure_count$Freq),]
+
+## adjusting the variables to look better in the plot
+ranking <- merge(measure_count, top_contributing, by="Measures", all.y = TRUE)
+ranking$colour <- ifelse(ranking$Rank < 36, "Top 35", "Other")
+ranking$colour = factor(ranking$colour, levels=c("Top 35", "Other"))
+
+# turning the freuquency into a percentage
+ranking$Freq <- ranking$Freq/10
+class(ranking$Rank)
+
+#now can also rbind actual names
+actual_names$NMI <- NULL
+ranking <- merge(actual_names, ranking, by="Rank")
+
+```
+
+### Showing all features - % of time in top 35 features across permutations
+
+```{r, echo=FALSE}
+names <- ranking$Name
+
+ggplot(data=ranking, aes(x=Rank, y=Freq, fill=Freq)) +
+  theme_classic() +
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  scale_fill_gradient2(low='lightgray', mid='yellow', high='#FC4E07', limits=c(0, 100), name="Percentage", guide =guide_colourbar(barwidth = 3, barheight = 10)) +
+scale_x_reverse(breaks=seq(1,135,1), labels=names, sec.axis = sec_axis(~.*1, breaks=seq(1,135,1))) +  scale_y_continuous(n.breaks = 10) +
+  labs(y="Percentage of Time As Top 35 Feature", x="Feature Name In Order of Rank") +
+  theme(axis.text.y=element_text(size=12), axis.text.x=element_text(size=18), 
+  axis.title.y=element_text(size=24),axis.title.x=element_text(size=24), legend.text=element_text(size=24), legend.title=element_text(size=24),plot.title = element_text(size=22)) +
+  facet_grid(colour ~ ., scales = "free", space="free") +
+  theme(strip.text.y = element_text(size = 18))
+  #xlim(135, 1)
+
+ggsave(file=file.path(directory, paste("NMI_top_ranking_frequency.png")), plot = last_plot(), width=13, height=20)
+```
+
+
+## Showing only 35 top contributing features for Figure 2
+
+```{r, echo=FALSE}
+subset <- ranking[which(ranking$Rank < 36), ]
+names <- subset$Name
+
+ggplot(data=subset, aes(x=Rank, y=Freq, fill=Freq)) +
+  theme_classic() +
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  scale_fill_gradient2(low='lightgray', mid='yellow', high='#FC4E07', space='Lab', breaks=seq(0,100,25)) +
+  scale_x_reverse(breaks=seq(1,35,1), labels=names, sec.axis = sec_axis(~.*1, breaks=seq(1,35,1), name = "Feature Rank")) +
+  scale_y_continuous(breaks=seq(0,100,10)) +
+  labs(y="Percentage of Time As Top 35 Feature") +
+  theme(axis.text.y=element_text(size=14), axis.text.x=element_text(size=20), 
+  axis.title.y=element_text(size=24),axis.title.x=element_text(size=24), legend.text=element_text(size=18),plot.title = element_text(size=22))
+  #xlim(135, 1)
+
+ggsave(file=file.path(directory, paste("Top_35_ranking_frequency.png", sep="")), plot = last_plot(), width=15, height=8)
+```
+
