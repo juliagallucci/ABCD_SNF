@@ -335,19 +335,19 @@ print(fifth*100)
 ## Calculating the average adjusted rand index for the 5 clusters
 
 ```{r, echo=FALSE}
-## getting the average adj list rand for 4 clusters
+## getting the average adj list rand for 5 clusters
 list_randindex_5 <- randindex
 list_randindex_5$Column <- seq(1:length(list_randindex_5[,1]))
 index <- melt(list_randindex_5, id.vars=c('Column'),var='Index')
 index <- na.omit(index)
 index$cluster_num <- "5 Clusters"
-mean(index$value) # 0.83
+mean(index$value) # 0.87 split 1, 0.83 split 2
 
 adjrandindex <- adjrandindex
 adjrandindex$Column <- seq(1:length(adjrandindex[,1]))
 adjrandindex <- melt(adjrandindex, id.vars=c('Column'),var='Index')
 adjrandindex <- na.omit(adjrandindex)
 adjrandindex$cluster_num <- "5 Clusters"
-mean(adjrandindex$value) # 0.48
+mean(adjrandindex$value) # 0.60 split 1, 0.48 split 2
 
 ```
