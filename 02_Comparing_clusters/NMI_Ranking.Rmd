@@ -745,26 +745,41 @@ top_features_df$Category <- factor(
 
 # Reorder features by Category first, then alphabetically within each
 top_features_df <- top_features_df %>%
-  arrange(Category, Feature) %>%
-  mutate(Feature = factor(Feature, levels = rev(unique(Feature))))  
+  mutate(Feature_Type = factor(Feature_Type, levels = c("Cognition", "Thickness", "Environment", "Volume", "Connectivity"))) %>%
+  arrange(Feature_Type, Feature) %>%
+  mutate(Feature = factor(Feature, levels = rev(unique(Feature))))
 
 # Order features by Feature_Type first, then by Feature within each type  
 top_features_df <- top_features_df %>%
-  mutate(Feature = paste0(Feature, " ", Feature_Type))
-top_features_df <- top_features_df %>%
-  arrange(Category, Feature_Type, Feature) %>%
+  arrange(Feature_Type, Feature) %>%
   mutate(Feature = factor(Feature, levels = rev(unique(Feature))))
-# Plot
-ggplot(top_features_df, aes(x = Feature, fill = Category)) +
-  geom_bar(width = 0.7) +
+# Add blank rows between Feature_Type blocks for spacing
+feature_with_blanks <- top_features_df %>%
+  arrange(Feature_Type, Feature) %>%
+  group_by(Feature_Type) %>%
+  group_split() %>%
+  purrr::map_df(~ bind_rows(.x, tibble(
+    Feature = paste0(" ", .x$Feature_Type[1], " Spacer"),  # spacer label
+    In_Discovery = NA,
+    In_Replication = NA,
+    Category = NA,
+    Feature_Type = .x$Feature_Type[1]
+  )))
+
+# Reorder with spacers
+feature_with_blanks <- feature_with_blanks %>%
+  mutate(Feature = factor(Feature, levels = rev(unique(Feature))))  # maintain plotting order
+ggplot(feature_with_blanks, aes(x = Feature, fill = Category)) +
+  geom_bar(width = 0.7, na.rm = TRUE) +  # skip NA (spacer) bars
   coord_flip() +
   scale_fill_manual(
     values = c(
-      "Both" = "#1b9e77",           # green-teal
-      "Discovery Only" = "#d95f02", # orange
-      "Replication Only" = "#7570b3" # purple
-    )
-  )+
+      "Both" = "#1b9e77",
+      "Discovery Only" = "#d95f02",
+      "Replication Only" = "#7570b3"
+    ),
+    na.value = "white"  # blank bar color
+  ) +
   labs(
     title = "Top 15% Features",
     subtitle = paste0("Overlap: ", round(overlap * 100, 1), "%"),
@@ -785,4 +800,5 @@ ggplot(top_features_df, aes(x = Feature, fill = Category)) +
     plot.subtitle = element_text(size = 13),
     panel.grid.major.y = element_blank()
   )
+
 ```
