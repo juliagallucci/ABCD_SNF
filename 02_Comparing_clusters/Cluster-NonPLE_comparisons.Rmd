@@ -1,0 +1,375 @@
+---
+title: "Cluster-NonPLE_comparisons"
+author: "Julia Gallucci"
+date: "21/05/2025"
+output: html_document
+---
+
+Cortical thickness
+```{r}
+complete_sample_all <- read_csv("data/complete_sample_all.csv") #removed siblings 
+
+complete_sample <- read_csv("code/snf/Discovery_Input/complete_sample.csv") #ple data
+
+# Perform the anti join to remove rows in complete_sample that are in complete_sample_all
+complete_sample_without_ple <- anti_join(complete_sample_all, complete_sample, by = "src_subject_id")
+
+cortical_thickness <- read_csv("data/cortical_thickness.csv")
+complete_sample_without_ple <- merge(cortical_thickness, complete_sample_without_ple)
+
+cortthick <- complete_sample_without_ple %>% 
+  dplyr::select(starts_with("smri_thick_cdk"), src_subject_id, interview_age, demo_sex_v2)
+
+cortthick$interview_age <- as.numeric(cortthick$interview_age)
+cortthick$demo_sex_v2 <- as.factor(cortthick$demo_sex_v2)
+
+site <- site[ , c("src_subject_id", "site_id_l")]
+cortthick <- merge(site, cortthick, by="src_subject_id")
+
+combat_input <- cortthick %>% dplyr::select(starts_with("smri_thick_cdk"))
+names <- colnames(combat_input)
+combat_input[, 1:68] <- apply(combat_input[, 1:68], 2, function(x) as.numeric(x))
+
+combat_input <- t(combat_input)
+combat_input <- apply(combat_input, 2 ,as.numeric)
+
+batch <- cortthick$site_id_l # can be numeric or character
+sex <- cortthick$demo_sex_v2 
+age <- cortthick$interview_age
+mod <- model.matrix(~age+sex)
+
+# not using empirical Bayes because it's a large sample size and the number of features < participants
+# To run the ComBat model without empirical Bayes, which boils down to fitting a location/shift (L/S) model for each feature separately
+cortthick.harmonized <- neuroCombat(dat=combat_input, batch=batch, eb=FALSE, mod=mod)
+
+# harmonized data
+cortthick.harmonized <- as.data.frame(t(cortthick.harmonized$dat.combat))
+colnames(cortthick.harmonized) <- names
+
+normative_sample <- cortthick.harmonized
+write.csv(normative_sample, "ct_normative_sample.csv")
+```
+
+
+```{r}
+smri_thick_columns <- grep("smri_thick_cdk_", names(compare_df), value = TRUE)
+
+ct_normative_sample <- normative_sample %>%
+  dplyr::select(smri_thick_columns)
+cluster1_ct <- compare_df %>% filter(groups == "1") %>%
+  dplyr::select(smri_thick_columns)
+cluster2_ct <- compare_df %>% filter(groups == "2") %>%
+  dplyr::select(smri_thick_columns)
+cluster3_ct <- compare_df %>% filter(groups == "3") %>%
+  dplyr::select(smri_thick_columns)
+cluster4_ct <- compare_df %>% filter(groups == "4") %>%
+  dplyr::select(smri_thick_columns)
+cluster5_ct <- compare_df %>% filter(groups == "5") %>%
+  dplyr::select(smri_thick_columns)
+
+# Initialize a dataframe to store the t-values and ROI names
+effect_size <- data.frame(label = character(), tstat = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each column starting from the 4th column
+for (i in 1:ncol(ct_normative_sample)) {
+  # Get the ROI name
+  roi_name <- colnames(ct_normative_sample)[i]
+  
+  # Perform a t-test between the ith column of each dataframe
+  t <- t.test(ct_normative_sample[[i]], cluster5_ct[[i]])
+  
+  # Extract the t-value
+  tstat_value <- t$statistic
+  
+  # Append the ROI name and t-statistic to the dataframe
+  effect_size <- rbind(effect_size, data.frame(label = roi_name, tstat = tstat_value))
+}
+
+# replace depending on cluster
+write.csv(effect_size,  "/projects/jgallucci/abcd/split2_C5_CT_effectsize.csv")
+
+```
+
+Subcortical volume
+```{r}
+complete_sample_all <- read_csv("data/complete_sample_all.csv") #removed siblings 
+
+complete_sample <- read_csv("code/snf/Discovery_Input/complete_sample.csv") #ple data
+
+# Perform the anti join to remove rows in complete_sample that are in complete_sample_all
+complete_sample_without_ple <- anti_join(complete_sample_all, complete_sample, by = "src_subject_id") #5225
+
+sub_vol <- read_csv("data/volume.csv")
+complete_sample_without_ple <- merge(sub_vol, complete_sample_without_ple)
+
+volume <- complete_sample_without_ple %>% dplyr::select(smri_vol_scs_ltventriclelh:smri_vol_scs_vedcrh, smri_vol_scs_intracranialv, src_subject_id, interview_age, demo_sex_v2)
+
+volume$interview_age <- as.numeric(volume$interview_age)
+volume$demo_sex_v2 <- as.factor(volume$demo_sex_v2)
+
+volume[, 1:27] <- apply(volume[, 1:27], 2, function(x) as.numeric(x))
+volume[, 1:26] <- apply(volume[, 1:26], 2, function(x) x/volume$smri_vol_scs_intracranialv)
+volume$smri_vol_scs_intracranialv <- NULL
+
+site <- site[ , c("src_subject_id", "site_id_l")]
+volume <- merge(site, volume, by="src_subject_id")
+
+combat_input <- volume %>% dplyr::select(starts_with("smri_vol_scs"))
+names <- colnames(combat_input)
+
+combat_input <- t(combat_input)
+combat_input <- apply(combat_input, 2 ,as.numeric)
+
+
+batch <- volume$site_id_l # can be numeric or character
+sex <- volume$demo_sex_v2
+age <- volume$interview_age
+
+mod <- model.matrix(~age+sex)
+
+# not using empirical Bayes because it's a large sample size and the number of features < participants
+# To run the ComBat model without empirical Bayes, which boils down to fitting a location/shift (L/S) model for each feature separately
+volume.harmonized <- neuroCombat(dat=combat_input, batch=batch, eb=FALSE, mod=mod)
+
+# harmonized data
+normative_sample <- as.data.frame(t(volume.harmonized$dat.combat))
+colnames(normative_sample) <- names
+write.csv(normative_sample, "vol_normative_sample.csv")
+```
+
+
+```{r}
+smri_vol_columns <- grep("smri_vol_scs", names(compare_df), value = TRUE)
+
+
+vol_normative_sample <- normative_sample %>%
+  dplyr::select(smri_vol_columns)
+cluster1_vol <- compare_df %>% filter(groups == "1") %>%
+  dplyr::select(smri_vol_columns)
+cluster2_vol <- compare_df %>% filter(groups == "2") %>%
+  dplyr::select(smri_vol_columns)
+cluster3_vol <- compare_df %>% filter(groups == "3") %>%
+  dplyr::select(smri_vol_columns)
+cluster4_vol <- compare_df %>% filter(groups == "4") %>%
+  dplyr::select(smri_vol_columns)
+cluster5_vol <- compare_df %>% filter(groups == "5") %>%
+  dplyr::select(smri_vol_columns)
+
+# Initialize a dataframe to store the t-values and ROI names
+effect_size <- data.frame(label = character(), tstat = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each column starting from the 4th column
+for (i in 1:ncol(normative_sample)) {
+  # Get the ROI name
+  roi_name <- colnames(normative_sample)[i]
+  
+  # Perform a t-test between the ith column of each dataframe
+  t <- t.test(vol_normative_sample[[i]], cluster4_vol[[i]])
+  
+  # Extract the t-value
+  tstat_value <- t$statistic
+  
+  # Append the ROI name and t-statistic to the dataframe
+  effect_size <- rbind(effect_size, data.frame(label = roi_name, tstat = tstat_value))
+}
+
+# replace depending on cluster
+write.csv(effect_size,  "/projects/jgallucci/abcd/split1_C4_VOL_effectsize.csv")
+```
+
+Surface Area
+```{r}
+complete_sample_all <- read_csv("data/complete_sample_all.csv") #removed siblings 
+
+complete_sample <- read_csv("code/snf/Discovery_Input/complete_sample.csv") #ple data
+
+# Perform the anti join to remove rows in complete_sample that are in complete_sample_all
+complete_sample_without_ple <- anti_join(complete_sample_all, complete_sample, by = "src_subject_id")
+
+SA <- read_csv("data/surface_area.csv")
+complete_sample_without_ple <- merge(SA, complete_sample_without_ple , by = "src_subject_id")
+
+Surf_area <- complete_sample_without_ple %>% 
+  dplyr::select(starts_with("smri_area_cdk"), src_subject_id, interview_age, demo_sex_v2)
+
+Surf_area$interview_age <- as.numeric(Surf_area$interview_age)
+Surf_area$demo_sex_v2 <- as.factor(Surf_area$demo_sex_v2)
+
+# dividing by total SA
+Surf_area[, 1:69] <- apply(Surf_area[, 1:69], 2, function(x) as.numeric(x))
+Surf_area[, 1:69] <- apply(Surf_area[, 1:69], 2, function(x) x/Surf_area$smri_area_cdk_total)
+Surf_area$smri_area_cdk_total <- NULL
+
+site <- site[ , c("src_subject_id", "site_id_l")]
+Surf_area <- merge(site, Surf_area, by="src_subject_id")
+
+combat_input <- Surf_area %>% dplyr::select(starts_with("smri_area_cdk"))
+combat_input[, 1:length(combat_input)] <- apply(combat_input[, 1:length(combat_input)], 2, function(x) as.numeric(x))
+
+names <- colnames(combat_input)
+
+
+#missing_env <- as.data.frame(sapply(combat_input, function(x) sum(is.na(x))))
+
+combat_input <- t(combat_input)
+combat_input <- apply(combat_input, 2 ,as.numeric)
+
+batch <- Surf_area$site_id_l # can be numeric or character
+sex <- Surf_area$demo_sex_v2 
+age <- Surf_area$interview_age
+
+mod <- model.matrix(~age+sex)
+
+# not using empirical Bayes because it's a large sample size and the number of features < participants
+# To run the ComBat model without empirical Bayes, which boils down to fitting a location/shift (L/S) model for each feature separately
+surfarea.harmonized <- neuroCombat(dat=combat_input, batch=batch, eb=FALSE, mod=mod)
+
+# harmonized data
+surfarea.harmonized <- as.data.frame(t(surfarea.harmonized$dat.combat))
+colnames(surfarea.harmonized) <- names
+normative_sample <- surfarea.harmonized
+write.csv(normative_sample, "sa_normative_sample.csv")
+```
+
+
+```{r}
+
+smri_area_columns <- grep("smri_area_cdk_", names(compare_df), value = TRUE)
+
+
+sa_normative_sample <- normative_sample %>%
+  dplyr::select(smri_area_columns)
+cluster1_sa <- compare_df %>% filter(groups == "1") %>%
+  dplyr::select(smri_area_columns)
+cluster2_sa <- compare_df %>% filter(groups == "2") %>%
+  dplyr::select(smri_area_columns)
+cluster3_sa <- compare_df %>% filter(groups == "3") %>%
+  dplyr::select(smri_area_columns)
+cluster4_sa <- compare_df %>% filter(groups == "4") %>%
+  dplyr::select(smri_area_columns)
+cluster5_sa <- compare_df %>% filter(groups == "5") %>%
+  dplyr::select(smri_area_columns)
+
+# Initialize a dataframe to store the t-values and ROI names
+effect_size <- data.frame(label = character(), tstat = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each column starting from the 4th column
+for (i in 1:ncol(sa_normative_sample)) {
+  # Get the ROI name
+  roi_name <- colnames(sa_normative_sample)[i]
+  
+  # Perform a t-test between the ith column of each dataframe
+  t <- t.test(sa_normative_sample[[i]], cluster5_sa[[i]])
+  
+  # Extract the t-value
+  tstat_value <- t$statistic
+  
+  # Append the ROI name and t-statistic to the dataframe
+  effect_size <- rbind(effect_size, data.frame(label = roi_name, tstat = tstat_value))
+}
+
+# replace depending on cluster
+write.csv(effect_size,  "/projects/jgallucci/abcd/split2_C5_SA_effectsize.csv")
+
+```
+
+Resting state
+```{r}
+complete_sample_all <- read_csv("data/complete_sample_all.csv") #removed siblings 
+
+complete_sample <- read_csv("code/snf/Discovery_Input/complete_sample.csv") #ple data
+
+# Perform the anti join to remove rows in complete_sample that are in complete_sample_all
+complete_sample_without_ple <- anti_join(complete_sample_all, complete_sample, by = "src_subject_id")
+
+RS <- read_csv("data/resting_state.csv")
+complete_sample_without_ple <- merge(RS, complete_sample_without_ple , by = "src_subject_id")
+
+imaging <- complete_sample_without_ple %>% select( src_subject_id, starts_with("rsfmri"), interview_age, demo_sex_v2)
+
+# Removing duplicated cortical-cortical connectivity measures based on duplicated measures
+dups <- as.data.frame(t(imaging[1, ]))
+dups$duplicated <- duplicated(dups[, 1])
+dups <- dups[which(dups$duplicated == "FALSE"), ]
+dups <- row.names(dups)
+
+imaging <- imaging[which(colnames(imaging) %in% dups)]
+
+# number of cort-cort 341
+
+imaging$interview_age <- as.numeric(imaging$interview_age)
+imaging$demo_sex_v2 <- as.factor(imaging$demo_sex_v2)
+
+site <- site[ , c("src_subject_id", "site_id_l")]
+imaging <- merge(site, imaging, by="src_subject_id")
+
+combat_input <- imaging %>% select(starts_with("rsfmri"))
+names <- colnames(combat_input)
+combat_input[, 1:length(combat_input)] <- apply(combat_input[, 1:length(combat_input)], 2, function(x) as.numeric(x))
+#missing_env <- as.data.frame(sapply(combat_input, function(x) sum(is.na(x))))
+
+combat_input <- t(combat_input)
+combat_input <- apply(combat_input, 2 ,as.numeric)
+
+
+batch <- imaging$site_id_l # can be numeric or character
+sex <- imaging$demo_sex_v2
+age <- imaging$interview_age
+
+mod <- model.matrix(~age+sex)
+
+# not using empirical Bayes because it's a large sample size and the number of features < participants
+# To run the ComBat model without empirical Bayes, which boils down to fitting a location/shift (L/S) model for each feature separately
+imaging.harmonized <- neuroCombat(dat=combat_input, batch=batch, parametric=FALSE, eb=FALSE, mod=mod)
+
+# harmonized data
+imaging.harmonized <- as.data.frame(t(imaging.harmonized$dat.combat))
+colnames(imaging.harmonized) <- names
+
+
+normative_sample <- imaging.harmonized
+write.csv(normative_sample, "rs_normative_sample.csv")
+```
+
+
+```{r}
+
+rs_columns <- grep("rsfmri_", names(compare_df), value = TRUE)
+
+
+rs_normative_sample <- normative_sample %>%
+  dplyr::select(rs_columns)
+cluster1_rs <- compare_df %>% filter(groups == "1") %>%
+  dplyr::select(rs_columns)
+cluster2_rs <- compare_df %>% filter(groups == "2") %>%
+  dplyr::select(rs_columns)
+cluster3_rs <- compare_df %>% filter(groups == "3") %>%
+  dplyr::select(rs_columns)
+cluster4_rs <- compare_df %>% filter(groups == "4") %>%
+  dplyr::select(rs_columns)
+cluster5_rs <- compare_df %>% filter(groups == "5") %>%
+  dplyr::select(rs_columns)
+
+# Initialize a dataframe to store the t-values and ROI names
+effect_size <- data.frame(label = character(), tstat = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each column starting from the 4th column
+for (i in 1:ncol(rs_normative_sample)) {
+  # Get the ROI name
+  roi_name <- colnames(rs_normative_sample)[i]
+  
+  # Perform a t-test between the ith column of each dataframe
+  t <- t.test(rs_normative_sample[[i]], cluster5_rs[[i]])
+  
+  # Extract the t-value
+  tstat_value <- t$statistic
+  
+  # Append the ROI name and t-statistic to the dataframe
+  effect_size <- rbind(effect_size, data.frame(label = roi_name, tstat = tstat_value))
+}
+
+# replace depending on cluster
+write.csv(effect_size,  "/projects/jgallucci/abcd/split2_C5_RS_effectsize.csv")
+
+```
+
