@@ -12,6 +12,9 @@ library(dplyr)
 library(car)
 library(knitr)
 library(kableExtra)
+library(broom)
+library(purrr)
+library(stringr)
 ```
 Load in data and clean data
 ```{r}
@@ -114,10 +117,6 @@ View separation of input features across clusters
 ```{r fig.height=4, fig.width=3}
 cog_stacked <- compare_df %>%
   dplyr::select(groups, 
-                interview_age.x,
-                race_ethnicity,
-                demo_sex,
-                site_id_l,
                 nihtbx_flanker_uncorrected, 
                 nihtbx_list_uncorrected, 
                 nihtbx_cardsort_uncorrected, 
@@ -143,56 +142,65 @@ test_names <- c("nihtbx_flanker_uncorrected",
 
 cog_long <- cog_stacked %>%
   tidyr::pivot_longer(
-    cols = -c(groups, race_ethnicity, demo_sex, site_id_l, interview_age.x),
+    cols = -c(groups),
     names_to = "test",
     values_to = "score"
   )
 
-cog_comparisons <- cog_long %>%
+
+# Step 1: Run ANOVA for each measure
+aov_results <- cog_long %>%
   group_by(test) %>%
-  do(broom::tidy(car::Anova(lm(score ~ groups, data = .), type = 2)))
+  do(tidy(aov(score ~ groups, data = .))) %>%
+  ungroup()
 
-# organizing table with other statistics for each measure
-All_results <- cog_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 2: Filter for overall test result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-All_results <- All_results %>% arrange(desc(statistic))
-All_results$df <- NULL
-All_results$term <- NULL
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
 
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for Cognitive Tests by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(test)
 
-# Create boxplots with pairwise comparisons
-plots <- lapply(test_names, function(test) {
-  ggplot(cog_stacked, aes(x = factor(groups), y = !!sym(test), fill = factor(groups))) +
-    geom_boxplot() +
-    stat_compare_means(comparisons = comparisons, method = "t.test", 
-                   label = "p.signif", p.adjust.method = "fdr")+
-    labs(
-         x = "Group",
-         y = test) +
-    theme_classic() + theme(legend.position = "none")
-})
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- cog_long %>%
+  filter(test %in% signif_measures) %>%
+  group_by(test) %>%
+  group_map(~ {
+    model <- aov(score ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
 
-# Display plots
-for (p in plots) {
-  print(p)
-}
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "test")
 
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(test, contrast_direction)
+
+aov_summary <- aov_summary %>% arrange(-statistic)
+aov_summary
+tukey_df_filtered
 ```
 
 2. Environment
 ```{r fig.height=4, fig.width=3}
 env_stacked <- compare_df %>%
-  dplyr::select(groups, 
-                interview_age.x,
-                race_ethnicity,
-                demo_sex,
-                site_id_l,ADD_nat_perc, income, total_neighbourhood_safety, walkindex, crime, 
+  dplyr::select(groups,ADD_nat_perc, income, total_neighbourhood_safety, walkindex, crime, 
                 gross_density, no2_pollution, pm_pollution, proximity_to_roads, 
                 lead_risk, parental_education, econ_deprivation, sub_availability, 
                 total_school_environment, total_parental_support, total_caregiver_support, 
@@ -206,67 +214,58 @@ env_stacked <- compare_df %>%
 
 env_long <- env_stacked %>%
   tidyr::pivot_longer(
-    cols = -c(groups, race_ethnicity, demo_sex, site_id_l, interview_age.x),
+    cols = -c(groups),
     names_to = "measure",
     values_to = "score"
   )
 
-env_comparisons <- env_long %>%
+# Step 1: Run ANOVA for each measure
+aov_results <- env_long %>%
   group_by(measure) %>%
-  do(broom::tidy(car::Anova(lm(score ~ groups , data = .), type = 2)))
+  do(tidy(aov(score ~ groups, data = .))) %>%
+  ungroup()
 
-# Initialize data frame for effect sizes
-effects <- data.frame(term = character(), eta_squared = numeric(), stringsAsFactors = FALSE)
+# Step 2: Filter for overall test result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-# Calculate eta squared for each test
-# Initialize data frame for effect sizes
-effects <- data.frame(term = character(), eta_squared = numeric(), stringsAsFactors = FALSE)
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
 
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(measure)
 
-# organizing table with other statistics for each measure
-All_results <- env_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- env_long %>%
+  filter(measure %in% signif_measures) %>%
+  group_by(measure) %>%
+  group_map(~ {
+    model <- aov(score ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
 
-All_results <- All_results %>% arrange(desc(statistic))
-All_results$df <- NULL
-All_results$term <- NULL
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "test")
 
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for Environmental Measures by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
 
-test_names <- c(
-  "site_id_l", "ADD_nat_perc", "income", "total_neighbourhood_safety", "walkindex", "crime", 
-  "gross_density", "no2_pollution", "pm_pollution", "proximity_to_roads", 
-  "lead_risk", "parental_education", "econ_deprivation", "sub_availability", 
-  "total_school_environment", "total_parental_support", "total_caregiver_support", 
-  "num_friends", "parental_monitoring_total", "family_conflict_total", 
-  "traumatic_events_total", "fam_mental_health", "family_support", 
-  "family_obligation", "family_independence", "family_referent", "ethnic_identity", 
-  "good_events", "bad_events", "discrim", "tbi_ss_worst_overall", "maternal_age", 
-  "paternal_age", "birth_weight", "premature", "illness", "breastfeeding", 
-  "verbal_development", "motor_development", "pregnancy_complications", 
-  "birth_complications", "maternal_substance_use"
-)
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(test, contrast_direction)
 
-
-# Create boxplots with pairwise comparisons
-plots <- lapply(test_names, function(test) {
-  ggplot(env_stacked, aes(x = factor(groups), y = !!sym(test), fill = factor(groups))) +
-    geom_boxplot() +
-    stat_compare_means(comparisons = comparisons, method = "t.test", label = "p.signif",p.adjust.method = "fdr") +
-    labs(
-         x = "Group",
-         y = test) +
-    theme_classic() + theme(legend.position = "none")
-})
-
-# Display plots
-for (p in plots) {
-  print(p)
-}
+aov_summary <- aov_summary %>% arrange(-statistic)
+aov_summary
+tukey_df_filtered
 ```
 
 3. Volume
@@ -274,42 +273,66 @@ for (p in plots) {
 smri_vol_columns <- grep("smri_vol", names(compare_df), value = TRUE)
 
 vol_stacked <- compare_df %>%
-  dplyr::select(groups, 
-                race_ethnicity,
-                demo_sex,
-                interview_age.x,
-                site_id_l,smri_vol_columns)
+  dplyr::select(groups, smri_vol_columns)
 
 vol_long <- vol_stacked %>%
   tidyr::pivot_longer(
-    cols = -c(groups, race_ethnicity, demo_sex, site_id_l, interview_age.x),
+    cols = -c(groups),
     names_to = "brain",
     values_to = "volume"
   )
 
-
-vol_comparisons <- vol_long %>%
+# Step 1: Run ANOVA for each measure
+aov_results <- vol_long %>%
   group_by(brain) %>%
-  do(broom::tidy(car::Anova(lm(volume ~ groups, data = .), type = 2)))
+  do(tidy(aov(volume ~ groups, data = .))) %>%
+  ungroup()
 
-# Initialize data frame for effect sizes
-effects <- data.frame(term = character(), eta_squared = numeric(), stringsAsFactors = FALSE)
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-# Calculate eta squared for each test
-# Initialize data frame for effect sizes
-effects <- data.frame(term = character(), eta_squared = numeric(), stringsAsFactors = FALSE)
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
 
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
 
-# organizing table with other statistics for each measure
-All_results <- vol_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- vol_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(volume ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
 
-All_results <- All_results %>% arrange(desc(statistic))
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
 
-All_results$df <- NULL
-All_results$term <- NULL
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
 
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(brain = str_remove(brain, "smri_vol_scs_"),                  # Remove the prefix
+         brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
+
+aov_summary <- aov_summary %>%
+  mutate(brain = str_remove(brain, "smri_vol_scs_"),                  # Remove the prefix
+         brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
 # Define replacements as named vector
 vol_replacements <- c(
   "bstem" = "Brain Stem",
@@ -347,56 +370,79 @@ replace_vol_labels <- function(vec, replacements) {
   return(vec)
 }
 
-All_results <- All_results %>%
-  mutate(brain = str_remove(brain, "smri_vol_scs_"),                  # Remove the prefix
-         brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
-
-# Apply the replacement function to the 'brain' column in All_results
-All_results$brain <- replace_vol_labels(All_results$brain, vol_replacements)
-
-
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for Volume Measures by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+# Apply the replacement function to the 'brain' column 
+tukey_df_filtered$brain <- replace_vol_labels(tukey_df_filtered$brain, vol_replacements)
+aov_summary$brain <- replace_vol_labels(aov_summary$brain, vol_replacements)
+aov_summary <- aov_summary %>% arrange(-statistic)
+aov_summary
+tukey_df_filtered
 ```
 4. Thickness
 ```{r}
 smri_thick_columns <- grep("smri_thick_cdk_", names(compare_df), value = TRUE)
 
 thick_stacked <- compare_df %>%
-  dplyr::select(groups, 
-                race_ethnicity,
-                interview_age.x,
-                demo_sex,
-                site_id_l,smri_thick_columns)
-
+  dplyr::select(groups,smri_thick_columns)
 
 thick_long <- thick_stacked %>%
   tidyr::pivot_longer(
-    cols = -c(groups, race_ethnicity, demo_sex, site_id_l, interview_age.x),
+    cols = -c(groups),
     names_to = "brain",
-    values_to = "thickness"
+    values_to = "thick"
   )
 
-
-thick_comparisons <- thick_long %>%
+# Step 1: Run ANOVA for each measure
+aov_results <- thick_long %>%
   group_by(brain) %>%
-  do(broom::tidy(car::Anova(lm(thickness ~ groups, data = .), type = 2)))
+  do(tidy(aov(thick ~ groups, data = .))) %>%
+  ungroup()
 
-# organizing table with other statistics for each measure
-All_results <- thick_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-All_results <- All_results %>% arrange(desc(statistic))
-All_results$df <- NULL
-All_results$term <- NULL
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
 
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
 
-All_results <- All_results %>%
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- thick_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(thick ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+
+tukey_df_filtered <- tukey_df_filtered %>%
   mutate(brain = str_remove(brain, "smri_thick_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
+
+aov_summary <- aov_summary %>%
+  mutate(brain = str_remove(brain, "smri_thick_cdk_"),                  # Remove the prefix
+         brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
+
 # Vector of patterns and replacements
 patterns <- c("lh_rracate", "rh_rracate", "lh_precn", "rh_precn", "lh_postcn", "rh_postcn",
               "lh_locc", "rh_locc", "rh_paracn", "lh_paracn", "rh_mdtm", "lh_mdtm",
@@ -426,7 +472,6 @@ replacements <- c("Left Rostral Anterior Cingulate", "Right Rostral Anterior Cin
                   "Right Caudal Anterior Cingulate", "Left Caudal Anterior Cingulate", "Right Entorhinal",
                   "Left Bankssts","Left Cuneus","Left Fusiform","Left Insula","Left Lingual",
                   "Right Bankssts","Right Cuneus","Right Fusiform","Right Insula","Right Lingual")
-
 # Function to replace labels in the 'brain' column
 replace_labels <- function(df, patterns, replacements) {
   for(i in seq_along(patterns)) {
@@ -435,55 +480,88 @@ replace_labels <- function(df, patterns, replacements) {
   return(df)
 }
 
-# Apply the function to All_results dataframe
-All_results <- replace_labels(All_results, patterns, replacements)
+# Apply the replacement function to the 'brain' column in All_results
+tukey_df_filtered$brain <- replace_labels(tukey_df_filtered,patterns, replacements)
+aov_summary$brain <- replace_labels(aov_summary,patterns,replacements)
+aov_summary <- aov_summary %>% arrange(-statistic)
 
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for Thickness Measures by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+aov_summary
+tukey_df_filtered
 ```
+
 5. Area
 ```{r}
 smri_area_columns <- grep("smri_area_cdk_", names(compare_df), value = TRUE)
 
 area_stacked <- compare_df %>%
-  dplyr::select(groups, 
-                race_ethnicity,
-                demo_sex,
-                interview_age.x,
-                site_id_l,smri_area_columns)
+  dplyr::select(groups,smri_area_columns)
 
 area_long <- area_stacked %>%
   tidyr::pivot_longer(
-    cols = -c(groups, race_ethnicity, demo_sex, interview_age.x,site_id_l),
+    cols = -c(groups),
     names_to = "brain",
     values_to = "area"
   )
 
-area_comparisons <- area_long %>%
+
+# Step 1: Run ANOVA for each measure
+aov_results <- area_long %>%
   group_by(brain) %>%
-  do(broom::tidy(car::Anova(lm(area ~ groups , data = .), type = 2)))
+  do(tidy(aov(area ~ groups, data = .))) %>%
+  ungroup()
 
-# organizing table with other statistics for each measure
-All_results <- area_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-All_results <- All_results %>% arrange(desc(statistic))
-All_results$df <- NULL
-All_results$term <- NULL
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
 
-All_results <- All_results %>%
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
+
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- area_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(area ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+
+tukey_df_filtered <- tukey_df_filtered %>%
   mutate(brain = str_remove(brain, "smri_area_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
-# Apply the function to All_results dataframe
-All_results <- replace_labels(All_results, patterns, replacements)
+aov_summary <- aov_summary %>%
+  mutate(brain = str_remove(brain, "smri_area_cdk_"),                  # Remove the prefix
+         brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
 
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for Area Measures by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+# Apply the replacement function to the 'brain' column in All_results
+tukey_df_filtered$brain <- replace_labels(tukey_df_filtered,patterns, replacements)
+aov_summary$brain <- replace_labels(aov_summary,patterns,replacements)
+aov_summary <- aov_summary %>% arrange(-statistic)
+
+aov_summary
+tukey_df_filtered
 ```
 
 6.Resting state
@@ -505,18 +583,50 @@ RS_long <- RS_stacked %>%
   )
 
 
-RS_comparisons <- RS_long %>%
+# Step 1: Run ANOVA for each measure
+aov_results <- RS_long %>%
   group_by(brain) %>%
-  do(broom::tidy(car::Anova(lm(RS ~ groups, data = .), type = 2)))
+  do(tidy(aov(RS ~ groups, data = .))) %>%
+  ungroup()
 
-# organizing table with other statistics for each measure
-All_results <- RS_comparisons
-All_results <- All_results %>% filter(term == "groups") 
-All_results$p.fdr <- p.adjust(All_results$p.value, method="fdr")
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
 
-All_results <- All_results %>% arrange(desc(statistic))
-All_results$df <- NULL
-All_results$term <- NULL
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
+
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
+
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- RS_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(RS ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+
 
 # Define cortical network (ngd) mappings
 ngd_mapping <- list(
@@ -586,11 +696,11 @@ rename_feature <- function(feature) {
   return(renamed)
 }
 # Create a new column with renamed features
-All_results$Feature_Renamed <- sapply(All_results$brain, rename_feature)
+tukey_df_filtered$brain <- sapply(tukey_df_filtered$brain, rename_feature)
+aov_summary$brain <- sapply(aov_summary$brain, rename_feature)
+aov_summary <- aov_summary %>% arrange(-statistic)
 
-# Display results in a formatted table with kableExtra
-All_results %>%
-  knitr::kable(caption = "ANOVA Results for RS Measures by Group") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+aov_summary
+tukey_df_filtered
 
 ```
