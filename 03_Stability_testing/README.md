@@ -1,5 +1,6 @@
 # Stability testing
 This folder contains R Markdown and R scripts for stability testing of clustering, both in the discovery and replication samples.
+*Code adapted from https://github.com/gracejacobs/SNF-NDD-Clustering*
 
 ## Script Summaries
 - **bootstrap.R** Defines functions to perform bootstrap resampling, clustering via SNF, and calculate stability metrics such as NMI scores, adjusted Rand indices, and participant agreement matrices.
