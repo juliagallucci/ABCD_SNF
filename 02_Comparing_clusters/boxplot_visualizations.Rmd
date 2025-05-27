@@ -1,0 +1,171 @@
+---
+title: "boxplots"
+author: "Julia Gallucci"
+date: "2025-05-27"
+output: html_document
+---
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(readr)
+```
+
+```{r}
+# Load data
+split1_ple <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/split1_subs.csv")
+split2_ple <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/split2_subs.csv")
+ple <- bind_rows(split1_ple, split2_ple)
+all_sample <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/complete_sample_all.csv")
+
+#select subset of participants that did not have distressing PLEs as comparitive group for plot
+nonPLE <- anti_join(all_sample, ple, by = "src_subject_id")
+
+nonPLE$groups <- "NonPLE"
+```
+
+Cognition
+```{r}
+test_names <- c("nihtbx_flanker_uncorrected", 
+                "nihtbx_list_uncorrected", 
+                "nihtbx_cardsort_uncorrected", 
+                "nihtbx_pattern_uncorrected", 
+                "nihtbx_picture_uncorrected", 
+                "nihtbx_reading_uncorrected", 
+                "nihtbx_picvocab_uncorrected", 
+                "pea_wiscv_trs", 
+                "rey_all_correct", 
+                "lmt_scr_num_correct")
+nonPLE_cog <- nonPLE %>%
+    dplyr::select(groups,
+                nihtbx_flanker_uncorrected, 
+                nihtbx_list_uncorrected, 
+                nihtbx_cardsort_uncorrected, 
+                nihtbx_pattern_uncorrected, 
+                nihtbx_picture_uncorrected, 
+                nihtbx_reading_uncorrected, 
+                nihtbx_picvocab_uncorrected, 
+                pea_wiscv_trs, 
+                rey_all_correct, 
+                lmt_scr_num_correct)
+
+PLE_cog <- compare_df %>%
+  dplyr::select(groups,
+                nihtbx_flanker_uncorrected, 
+                nihtbx_list_uncorrected, 
+                nihtbx_cardsort_uncorrected, 
+                nihtbx_pattern_uncorrected, 
+                nihtbx_picture_uncorrected, 
+                nihtbx_reading_uncorrected, 
+                nihtbx_picvocab_uncorrected, 
+                pea_wiscv_trs, 
+                rey_all_correct, 
+                lmt_scr_num_correct)
+
+cog_stacked <- bind_rows(PLE_cog, nonPLE_cog)
+# Reorder groups so that they are ordered from 1 to 5
+cog_stacked$groups <- factor(cog_stacked$groups, levels = c("NonPLE", "1", "2", "3", "4", "5"))
+
+# Group colors
+default_colors <- scales::hue_pal()(5)
+
+# Generate plots with only significant comparisons
+plots <- lapply(test_names, function(test) {
+  p <- ggplot(cog_stacked, aes(x = groups, y = .data[[test]], fill = groups)) +
+    geom_boxplot() +
+    labs(x = "Group", y = test) +
+    scale_fill_manual(values = c(
+      "NonPLE" = "grey",
+      "1" = default_colors[1],
+      "2" = default_colors[2],
+      "3" = default_colors[3],
+      "4" = default_colors[4],
+      "5" = default_colors[5]
+    )) +
+    theme_classic() +
+    theme(legend.position = "none")
+  return(p)
+})
+
+# Display plots
+for (p in plots) {
+  print(p)
+}
+
+```
+Environment
+```{r}
+test_names <- c(
+  "ADD_nat_perc", "income", "total_neighbourhood_safety", "walkindex", "crime",
+  "gross_density", "no2_pollution", "pm_pollution", "proximity_to_roads",
+  "lead_risk", "parental_education", "econ_deprivation", "sub_availability",
+  "total_school_environment", "total_parental_support", "total_caregiver_support",
+  "num_friends", "parental_monitoring_total", "family_conflict_total",
+  "traumatic_events_total", "fam_mental_health", "family_support",
+  "family_obligation", "family_independence", "family_referent", "ethnic_identity",
+  "good_events", "bad_events", "discrim", "tbi_ss_worst_overall", "maternal_age",
+  "paternal_age", "birth_weight", "premature", "illness", "breastfeeding",
+  "verbal_development", "motor_development", "pregnancy_complications",
+  "birth_complications", "maternal_substance_use"
+)
+
+colnames(nonPLE) <- sub("^data\\.", "", colnames(nonPLE))
+
+nonPLE_env <- nonPLE %>%
+    dplyr::select(groups, ADD_nat_perc, income, total_neighbourhood_safety, walkindex, crime,
+                gross_density, no2_pollution, pm_pollution, proximity_to_roads,
+                lead_risk, parental_education, econ_deprivation, sub_availability,
+                total_school_environment, total_parental_support, total_caregiver_support,
+                num_friends, parental_monitoring_total, family_conflict_total,
+                traumatic_events_total, fam_mental_health, family_support,
+                family_obligation, family_independence, family_referent, ethnic_identity,
+                good_events, bad_events, discrim, tbi_ss_worst_overall, maternal_age,
+                paternal_age, birth_weight, premature, illness, breastfeeding,
+                verbal_development, motor_development, pregnancy_complications,
+                birth_complications, maternal_substance_use)
+
+PLE_env <- compare_df %>%
+  dplyr::select(groups,ADD_nat_perc, income, total_neighbourhood_safety, walkindex, crime,
+                gross_density, no2_pollution, pm_pollution, proximity_to_roads,
+                lead_risk, parental_education, econ_deprivation, sub_availability,
+                total_school_environment, total_parental_support, total_caregiver_support,
+                num_friends, parental_monitoring_total, family_conflict_total,
+                traumatic_events_total, fam_mental_health, family_support,
+                family_obligation, family_independence, family_referent, ethnic_identity,
+                good_events, bad_events, discrim, tbi_ss_worst_overall, maternal_age,
+                paternal_age, birth_weight, premature, illness, breastfeeding,
+                verbal_development, motor_development, pregnancy_complications,
+                birth_complications, maternal_substance_use)
+
+env_stacked <- bind_rows(PLE_env, nonPLE_env)
+# Reorder groups so that they are ordered from 1 to 5
+env_stacked$groups <- factor(env_stacked$groups, levels = c("NonPLE", "1", "2", "3", "4", "5"))
+
+# Group colors
+default_colors <- scales::hue_pal()(5)
+
+# Generate plots with only significant comparisons
+plots <- lapply(test_names, function(test) {
+  p <- ggplot(env_stacked, aes(x = groups, y = .data[[test]], fill = groups)) +
+    geom_boxplot() +
+    labs(x = "Group", y = test) +
+    scale_fill_manual(values = c(
+      "NonPLE" = "grey",
+      "1" = default_colors[1],
+      "2" = default_colors[2],
+      "3" = default_colors[3],
+      "4" = default_colors[4],
+      "5" = default_colors[5]
+    )) +
+    theme_classic() +
+    theme(legend.position = "none")
+  return(p)
+})
+
+# Display plots
+for (p in plots) {
+  print(p)
+}
+
+```
