@@ -1,0 +1,338 @@
+---
+title: "Out-of-model measures"
+author: "Julia Gallucci"
+date: "21/05/2025"
+output: html_document
+---
+
+Fractional Anisotropy
+``` {r}
+# Load data
+Diff_FA_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_FA_harmonized.csv")
+
+# Merge group info 
+diffusion_data <- left_join(compare_df, Diff_FA_harmonized, by = "src_subject_id")
+
+# Identify FA columns
+fa_columns <- grep("^dmdtifp1_", names(diffusion_data), value = TRUE)
+
+fa_stacked <- diffusion_data %>%
+  dplyr::select(groups, all_of(fa_columns))
+fa_long <- fa_stacked %>% tidyr::pivot_longer(cols = -c(groups),
+                                              names_to = "brain",
+                                              values_to = "fa")
+
+# Step 1: Run ANOVA for each measure
+aov_results <- fa_long %>%
+  group_by(brain) %>%
+  do(tidy(aov(fa ~ groups, data = .))) %>%
+  ungroup()
+
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
+
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
+
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
+
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- fa_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(fa ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+# Define replacements as named vector
+wm_replacements <- c(
+  "dmdtifp1_1" = "Right Fornix", 
+  "dmdtifp1_43" = "Right Fornix", 
+  
+  "dmdtifp1_2" = "Left Fornix", 
+  "dmdtifp1_44" = "Left Fornix", 
+  
+  "dmdtifp1_3" = "Right Cingulate Cingulum", 
+  "dmdtifp1_45" = "Right Cingulate Cingulum",
+  
+  "dmdtifp1_4" = "Left Cingulate Cingulum", 
+  "dmdtifp1_46" = "Left Cingulate Cingulum",
+  
+  "dmdtifp1_5" = "Right Parahippocampal Cingulum", 
+  "dmdtifp1_47" = "Right Parahippocampal Cingulum", 
+  
+  "dmdtifp1_6" = "Left Parahippocampal Cingulum", 
+  "dmdtifp1_48" = "Left Parahippocampal Cingulum", 
+  
+  "dmdtifp1_7" = "Right Corticospinal/Pyramidal", 
+  "dmdtifp1_49" = "Right Corticospinal/Pyramidal", 
+  
+  "dmdtifp1_8" = "Left Corticospinal/Pyramidal", 
+  "dmdtifp1_50" = "Left Corticospinal/Pyramidal", 
+  
+  "dmdtifp1_9" = "Right Anterior Thalamic Radiations", 
+  "dmdtifp1_51" = "Right Anterior Thalamic Radiations", 
+  
+  "dmdtifp1_10" = "Left Anterior Thalamic Radiations", 
+  "dmdtifp1_52" = "Left Anterior Thalamic Radiations", 
+  
+  "dmdtifp1_11" = "Right Uncinate", 
+  "dmdtifp1_53" = "Right Uncinate", 
+  
+  "dmdtifp1_12" = "Left Uncinate", 
+  "dmdtifp1_54" = "Left Uncinate", 
+  
+  "dmdtifp1_13" = "Right Inferior Longitudinal Fasiculus", 
+  "dmdtifp1_55" = "Right Inferior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_14" = "Left Inferior Longitudinal Fasiculus", 
+  "dmdtifp1_56" = "Left Inferior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_15" = "Right Inferior-Fronto-occipital Fasiculus", 
+  "dmdtifp1_57" = "Right Inferior-Fronto-occipital Fasiculus", 
+  
+  "dmdtifp1_16" = "Left Inferior-Fronto-occipital Fasiculus", 
+  "dmdtifp1_58" = "Left Inferior-Fronto-occipital Fasiculus", 
+  
+  "dmdtifp1_17" = "Forceps Major", 
+  "dmdtifp1_59" = "Forceps Major", 
+  
+  "dmdtifp1_18" = "Forceps Minor", 
+  "dmdtifp1_60" = "Forceps Minor", 
+  
+  "dmdtifp1_19" = "Corpus Callosum", 
+  "dmdtifp1_61" = "Corpus Callosum",
+  
+  "dmdtifp1_20" = "Right Superior Longitudinal Fasiculus", 
+  "dmdtifp1_62" = "Right Superior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_21" = "Left Superior Longitudinal Fasiculus", 
+  "dmdtifp1_63" = "Left Superior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_22" = "Right Temporal Superior Longitudinal Fasiculus", 
+  "dmdtifp1_64" = "Right Temporal Superior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_23" = "Left Temporal Superior Longitudinal Fasiculus", 
+  "dmdtifp1_65" = "Left Temporal Superior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_24" = "Right Parietal Superior Longitudinal Fasiculus", 
+  "dmdtifp1_66" = "Right Parietal Superior Longitudinal Fasiculus", 
+  
+  "dmdtifp1_25" = "Left Parietal Superior Longitudinal Fasiculus",  
+  "dmdtifp1_67" = "Left Parietal Superior Longitudinal Fasiculus",  
+  
+  "dmdtifp1_26" = "Right Superior Corticostriate", 
+  "dmdtifp1_68" = "Right Superior Corticostriate", 
+  
+  "dmdtifp1_27" = "Left Superior Corticostriate", 
+  "dmdtifp1_69" = "Left Superior Corticostriate", 
+  
+  "dmdtifp1_28" = "Right Superior Corticostriate- Frontal Cortex Only", 
+  "dmdtifp1_70" = "Right Superior Corticostriate- Frontal Cortex Only", 
+  
+  "dmdtifp1_29" = "Left Superior Corticostriate- Frontal Cortex Only", 
+  "dmdtifp1_71" = "Left Superior Corticostriate- Frontal Cortex Only", 
+  
+  "dmdtifp1_30" = "Right Superior Corticostriate- Parietal Cortex Only", 
+  "dmdtifp1_72" = "Right Superior Corticostriate- Parietal Cortex Only", 
+  
+  "dmdtifp1_31" = "Left Superior Corticostriate- Parietal Cortex Only", 
+  "dmdtifp1_73" = "Left Superior Corticostriate- Parietal Cortex Only", 
+  
+  "dmdtifp1_32" = "Right Striatal Inferior Frontal Cortex", 
+  "dmdtifp1_74" = "Right Striatal Inferior Frontal Cortex", 
+  
+  "dmdtifp1_33" = "Left Striatal Inferior Frontal Cortex", 
+  "dmdtifp1_75" = "Left Striatal Inferior Frontal Cortex", 
+  
+  "dmdtifp1_34" = "Right Inferior Frontal Superior Frontal Cortex", 
+  "dmdtifp1_76" = "Right Inferior Frontal Superior Frontal Cortex", 
+  
+  "dmdtifp1_35" = "Left Inferior Frontal Superior Frontal Cortex", 
+  "dmdtifp1_77" = "Left Inferior Frontal Superior Frontal Cortex", 
+  
+  "dmdtifp1_36" = "Right Fornix- Excluding Fimbria", 
+  "dmdtifp1_78" = "Right Fornix- Excluding Fimbria", 
+  
+  "dmdtifp1_37" = "Left Fornix- Excluding Fimbria", 
+  "dmdtifp1_79" = "Left Fornix- Excluding Fimbria", 
+  
+  "dmdtifp1_38" = "All tracts", 
+  "dmdtifp1_80" = "All tracts", 
+  
+  "dmdtifp1_39" = "All tracts in right hemisphere without Corpus Callosum", 
+  "dmdtifp1_81" = "All tracts in right hemisphere without Corpus Callosum", 
+  
+  "dmdtifp1_40" = "All tracts in left hemisphere without Corpus Callosum", 
+  "dmdtifp1_82" = "All tracts in left hemisphere without Corpus Callosum", 
+  
+  "dmdtifp1_41" = "All tracts in right hemisphere", 
+  "dmdtifp1_83" = "All tracts in right hemisphere", 
+  
+  "dmdtifp1_42" = "All tracts in left hemisphere", 
+  "dmdtifp1_84" = "All tracts in left hemisphere"
+)
+
+replace_wm_labels <- function(vec, replacements) {
+  for (abbr in names(replacements)) {
+    # Use '\\b' to ensure the exact match of the abbreviation and prevent partial replacements
+    vec <- gsub(paste0("\\b", abbr, "\\b"), replacements[[abbr]], vec)
+  }
+  return(vec)
+}
+
+# Apply the replacement function to the 'brain' column in All_results
+aov_summary$brain <- replace_wm_labels(aov_summary$brain, wm_replacements)
+aov_summary = aov_summary %>% arrange(-statistic)
+tukey_df_filtered$brain <- replace_wm_labels(tukey_df_filtered$brain, wm_replacements)
+```
+
+Mean Diffusivity
+```{r}
+# Load data
+Diff_MD_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_MD_harmonized.csv")
+# Merge group info (replace "subject_id" if another ID column is used)
+diffusion_data <- left_join(compare_df, Diff_MD_harmonized, by = "src_subject_id")
+
+# Identify MD columns
+md_columns <- grep("^dmdtifp1_", names(diffusion_data), value = TRUE)
+md_stacked <- diffusion_data %>%
+  dplyr::select(groups, all_of(md_columns))
+md_long <- md_stacked %>% tidyr::pivot_longer(cols = -c(groups),
+                                              names_to = "brain",
+                                              values_to = "md")
+
+# Step 1: Run ANOVA for each measure
+aov_results <- md_long %>%
+  group_by(brain) %>%
+  do(tidy(aov(md ~ groups, data = .))) %>%
+  ungroup()
+
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
+
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
+
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(brain)
+
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- md_long %>%
+  filter(brain %in% signif_measures) %>%
+  group_by(brain) %>%
+  group_map(~ {
+    model <- aov(md ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "brain")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(brain, contrast_direction)
+
+# Apply the replacement function to the 'brain' column in All_results
+tukey_df_filtered$brain <- replace_wm_labels(tukey_df_filtered$brain, wm_replacements)
+
+aov_summary$brain <- replace_wm_labels(aov_summary$brain, wm_replacements)
+aov_summary = aov_summary %>% arrange(-statistic)
+```
+
+CBCL
+```{r}
+cbcl_baseline = left_join(compare_df, cbcl_baseline, by = "src_subject_id")
+cbcl_columns <- c("cbcl_scr_syn_anxdep_t", "cbcl_scr_syn_withdep_t",
+                  "cbcl_scr_syn_aggressive_t","cbcl_scr_syn_somatic_t",
+                  "cbcl_scr_syn_social_t","cbcl_scr_syn_thought_t",
+                  "cbcl_scr_syn_attention_t","cbcl_scr_syn_rulebreak_t"
+                  )
+cbcl_stacked <- cbcl_baseline %>%
+  dplyr::select(groups, all_of(cbcl_columns))
+cbcl_long <- cbcl_stacked %>% tidyr::pivot_longer(cols = -c(groups),
+                                              names_to = "cbcl",
+                                              values_to = "score")
+
+# Step 1: Run ANOVA for each measure
+aov_results <- cbcl_long %>%
+  group_by(cbcl) %>%
+  do(tidy(aov(score ~ groups, data = .))) %>%
+  ungroup()
+
+# Step 2: Filter for overall brain result only
+aov_summary <- aov_results %>%
+  filter(term == "groups")
+
+# Step 3: Apply FDR correction
+aov_summary <- aov_summary %>%
+  mutate(p_adj = p.adjust(p.value, method = "fdr"))
+
+# Step 4: Select significant measures
+signif_measures <- aov_summary %>%
+  filter(p_adj < 0.05) %>%
+  pull(cbcl)
+
+# Step 5: Run Tukey HSD post hoc for significant ones
+tukey_results <- cbcl_long %>%
+  filter(cbcl %in% signif_measures) %>%
+  group_by(cbcl) %>%
+  group_map(~ {
+    model <- aov(score ~ groups, data = .x)
+    tidy(TukeyHSD(model, "groups"))
+  }, .keep = TRUE) %>%
+  set_names(signif_measures)
+
+# Optional: Combine results into a data frame
+tukey_df <- bind_rows(tukey_results, .id = "cbcl")
+
+tukey_df_filtered <- tukey_df %>% filter(adj.p.value <0.05)
+
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(direction = case_when(
+    estimate > 0 ~ ">",
+    estimate < 0 ~ "<",
+    TRUE ~ "="  # in case estimate is exactly zero
+  ))
+tukey_df_filtered <- tukey_df_filtered %>%
+  mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
+  dplyr::select(cbcl, contrast_direction)
+
+aov_summary = aov_summary %>% arrange(-statistic)
+aov_summary
+tukey_df_filtered
+```

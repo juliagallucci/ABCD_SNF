@@ -1,0 +1,309 @@
+---
+title: "PLE_Longitudinal_Analysis"
+author: "Julia Gallucci"
+date: "05/05/2025"
+output: html_document
+---
+Load necessary packages
+```{r}
+library(tidyverse)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(psych)
+library(nFactors)
+library(lcmm)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggalluvial)
+library(reshape2)
+```
+
+Load PLE longitudinal data
+```{r}
+ple_longitudinal <- read_excel("../ple_longitudinal.xlsx")
+```
+
+Long data
+```{r}
+ple_longitudinal_long <- ple_longitudinal %>%
+  pivot_longer(cols = starts_with("total_score"), names_to = "time_point", values_to = "ple_score") %>%
+  mutate(src_subject_id = as.numeric(as.factor(src_subject_id)),
+         time_point = recode(time_point,
+                             "total_score_bl" = "0",
+                             "total_score_1yr" = "1",
+                             "total_score_2yr" = "2",
+                             "total_score_3yr" = "3"),
+         time_point = as.numeric(time_point))
+```
+
+LCGA; fixed intercept, fixed slope
+```{r}
+#set seed for reproducibility
+set.seed(123)
+
+#run models with 1-6 classes, each with 200 random starts using the 1-class model to set initial start values
+
+lcga1 <- lcmm::hlme(ple_score ~ time_point, subject = "src_subject_id", ng = 1, data = ple_longitudinal_long)
+lcga2 <- gridsearch(rep = 100, maxiter = 200, minit= lcga1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", ng = 2, data = ple_longitudinal_long, mixture =~time_point))
+lcga3 <- gridsearch(rep = 100, maxiter = 200, minit= lcga1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", ng = 3, data = ple_longitudinal_long, mixture =~time_point))
+lcga4 <- gridsearch(rep = 100, maxiter = 200, minit= lcga1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", ng = 4, data = ple_longitudinal_long, mixture =~time_point))
+lcga5 <- gridsearch(rep = 100, maxiter = 200, minit= lcga1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", ng = 5, data = ple_longitudinal_long, mixture =~time_point))
+                               
+#make table with results for the 6 models
+model_comparison <- summarytable(lcga1, lcga2, lcga3, lcga4, lcga5)
+model_comparison <- as.data.frame(model_comparison)
+model_comparison
+```
+
+GMM extends on LCGA, is more flexible model allowing for individual variability within each class.
+first look at just random intercept
+```{r}
+#set seed for reproducibility
+set.seed(123)
+
+#run models with 1-6 classes, each with 100 random starts using the 1-class model to set initial start values
+
+gmm1 <- lcmm::hlme(ple_score ~ time_point, subject = "src_subject_id", random =~1, ng = 1, 
+                    data = ple_longitudinal_long)
+gmm2 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", random=~1,
+                             ng = 2, data = ple_longitudinal_long, mixture =~time_point, nwg = T))
+gmm3 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", random=~1,
+                             ng = 3, data = ple_longitudinal_long, mixture =~time_point, nwg = T))
+gmm4 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", random=~1,
+                             ng = 4, data = ple_longitudinal_long, mixture =~time_point, nwg = T))
+gmm5 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", random=~1,
+                             ng = 5, data = ple_longitudinal_long, mixture =~time_point, nwg = T))
+
+#make table with results for the 5 models
+model_comparison_gmm <- summarytable(gmm1, gmm2, gmm3, gmm4, gmm5)
+model_comparison_gmm <- as.data.frame(model_comparison_gmm)
+```
+
+Now look at random intercept, random slope
+```{r}
+#set seed for reproducibility
+set.seed(123)
+
+#run models with 1-6 classes, each with 100 random starts using the 1-class model to set initial start values
+
+gmm1_2 <- lcmm::hlme(ple_score ~ time_point, subject = "src_subject_id", random =~1 + 
+                     time_point, ng = 1, data = ple_longitudinal_long)
+gmm2_2 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1_2, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id",
+                             random=~1 + time_point ,ng = 2, data = 
+                               ple_longitudinal_long, mixture 
+                             =~time_point, nwg = T))
+gmm3_2 <- gridsearch(rep = 100, maxiter =200, minit= gmm1_2, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", 
+                             random=~1 + time_point,
+                             ng = 3, data = ple_longitudinal_long, mixture
+                             =~time_point, nwg = T))
+gmm4_2 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1_2, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id", 
+                             random=~1 + time_point,
+                             ng = 4, data = ple_longitudinal_long, mixture
+                             =~time_point, nwg = T))
+gmm5_2 <- gridsearch(rep = 100, maxiter = 200, minit= gmm1_2, 
+                    m = hlme(ple_score ~ time_point, subject = "src_subject_id",
+                             random=~1 + time_point,
+                             ng = 5, data = ple_longitudinal_long, mixture
+                             =~time_point, nwg = T))
+#make table with results for the 5 models
+model_comparison_gmm_2 <- summarytable(gmm1_2, gmm2_2, gmm3_2, gmm4_2, gmm5_2)
+model_comparison_gmm_2 <- as.data.frame(model_comparison_gmm_2)
+model_comparison_gmm_2 
+```
+
+GMM2 chosen for further analysis
+```{r}
+# Extract cluster assignments from each GMM model
+df1 <- gmm1_2$pprob[,1:2] %>% rename(Class1 = class)
+df2 <- gmm2_2$pprob[,1:2] %>% rename(Class2 = class)
+df3 <- gmm3_2$pprob[,1:2] %>% rename(Class3 = class)
+df4 <- gmm4_2$pprob[,1:2] %>% rename(Class4 = class)
+df5 <- gmm5_2$pprob[,1:2] %>% rename(Class5 = class)
+#df6 <- gmm6$pprob[,1:2] %>% rename(Class6 = class)
+
+# Merge datasets by pin
+df <- reduce(list(df1, df2, df3, df4, df5), left_join, by = "src_subject_id")
+
+# Convert to long format
+df_long <- df %>%
+  pivot_longer(cols = starts_with("Class"), 
+               names_to = "Model", 
+               values_to = "Cluster") %>%
+  mutate(Model = as.factor(gsub("Class", "", Model)),  # Convert Model to factor
+         Cluster = as.factor(Cluster))  # Ensure Cluster is categorical
+
+# Check structure
+str(df_long)
+# Set color palette based on max number of clusters
+num_clusters <- length(unique(df_long$Cluster))
+palette_colors <- RColorBrewer::brewer.pal(n = min(num_clusters, 12), name = "Set1")  # Use up to 12 colors
+
+# Alluvial plot
+ggplot(df_long, aes(x = Model, stratum = Cluster, alluvium = src_subject_id, fill = Cluster)) +
+  geom_flow(stat = "alluvium", alpha = 0.7) +  # Flow connections
+  geom_stratum(alpha = 0.8) +  # Cluster strata
+  scale_x_discrete(limits = as.character(1:5)) +  # Ensure all models appear
+  scale_fill_manual(values = palette_colors) +  # Apply custom color palette
+  labs(title = "Changes in Class Membership Across GMM Models",
+       x = "Number of Classes in Model",
+       y = "Count of Individuals") +
+  theme_minimal()
+```
+
+Probabilities
+```{r}
+# Extract probabilities from the gmm model
+probabilities = gmm3_2$pprob[, 3:5]
+
+# Convert to matrix for headman
+heatmap_data <- as.matrix(probabilities)
+rownames(heatmap_data) <- gmm3_2$pprob$src_subject_id
+
+# Melt the matrix to long format
+heatmap_long <- melt(heatmap_data)
+colnames(heatmap_long) <- c("src_subject_id", "Class", "Probability")
+
+# Determine the class with the highest probability for each individual (Pin)
+heatmap_long$Max_Prob_Class <- apply(heatmap_data, 1, function(x) which.max(x))
+
+# Reorder the Pins based on the class with the highest probability
+heatmap_long$src_subject_id <- factor(heatmap_long$src_subject_id, levels = unique(heatmap_long$src_subject_id[order(heatmap_long$Max_Prob_Class)]))
+
+# Plot heatmap
+ggplot(heatmap_long, aes(x = Class, y = src_subject_id, fill = Probability)) +
+  geom_tile() +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Soft Assignment: Membership Probabilities Heatmap", x = "Latent Class", y = "src_subject_id") +
+  theme_minimal()
+
+```
+
+
+```{r}
+trajectory_2 <- as.data.frame(gmm3_2$pprob[, 1:2]) #best fit model
+
+# trajectory has class labels for each pin, merge them into PEPP_cdss data
+ple_longitudinal_long_2 <- ple_longitudinal_long %>%
+  left_join(trajectory_2, by = "src_subject_id") %>%
+  mutate(class = factor(class)) 
+
+# Convert to factor and relevel
+ple_longitudinal_long_2$class <- factor(ple_longitudinal_long_2$class, levels = c(1, 2,3))
+
+# Plotting
+ple_longitudinal_long_2 %>%
+  ggplot(aes(x = time_point, y = ple_score, group = src_subject_id, color = class)) +
+  geom_line(alpha = 0.1, size = 0.15) +  # Make lines more transparent and thinner
+  geom_smooth(aes(group = class), method = "loess", size = 2, se = TRUE, alpha = 0.4) +
+theme(legend.key = element_rect(fill = NA))  +
+  scale_x_continuous(breaks = unique(ple_longitudinal_long_2$time_point)) +
+  labs(x = "Time Point (Years)", y = "Total PLE weighted by distress", colour = "Latent Class") +
+  geom_point(size = 1, alpha = 0.1) +  # Smaller and more transparent points
+  labs(title = "PLE Total Score weighted by distress Over Time") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for readability
+  #guides(color = "none", fill = "none") +  # Remove the legend for fill (SE band)
+  scale_color_manual(values = RColorBrewer::brewer.pal(
+    n = length(unique(ple_longitudinal_long_2$class)), name = "Set1"
+  )) +  # Distinct colors
+    theme_classic()
+```
+
+```{r}
+ple_unique_2 <- ple_longitudinal_long_2 %>%
+  distinct(src_subject_id, class, groups)
+
+# --------------------------------------------------------------------------
+# STEP 1: Pie Chart — Latent Class Proportions Within Each Group
+# --------------------------------------------------------------------------
+
+# Create contingency table: Class by Group
+tbl_2 <- table(ple_unique_2$class, ple_unique_2$groups)
+tbl_df_2 <- as.data.frame(tbl_2)
+colnames(tbl_df_2) <- c("Class", "Group", "Count")
+
+# Compute proportions and labels
+tbl_df_2 <- tbl_df_2 %>%
+  group_by(Group) %>%
+  mutate(Proportion = Count / sum(Count),
+         Label = paste0(round(Proportion * 100), "%"))
+
+# Plot pie charts by group
+ggplot(tbl_df_2, aes(x = "", y = Proportion, fill = Class)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y") +
+  facet_wrap(~ Group) +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5), color = "white", size = 4) +
+  scale_fill_manual(values = RColorBrewer::brewer.pal(n = length(unique(ple_unique_2$class)), name = "Set1")) +
+  labs(title = "Latent Class Proportions Within Each Group",
+       x = NULL, y = NULL) +
+  theme_void() +
+  theme(strip.text = element_text(size = 12, face = "bold"),
+        legend.title = element_blank())
+
+# --------------------------------------------------------------------------
+# STEP 2: Chi-Square Test and Standardized Residuals
+# --------------------------------------------------------------------------
+
+# Create contingency table: Group by Class (for chi-square)
+contingency_table_2 <- tbl_2
+
+# Run chi-square test
+chisq_test_2 <- chisq.test(contingency_table_2)
+
+# Extract standardized residuals
+residuals_std_2 <- chisq_test_2$stdres
+residuals_df_2 <- as.data.frame(as.table(residuals_std_2))
+colnames(residuals_df_2) <- c("Class", "Group", "StdResidual")
+
+# --------------------------------------------------------------------------
+# STEP 3: Compute 1-sided p-values and apply FDR correction
+# --------------------------------------------------------------------------
+
+options(scipen = 999)  # Avoid scientific notation
+
+# 1-sided p-values based on direction of StdResidual
+residuals_df_2 <- residuals_df_2 %>%
+  mutate(PValue = ifelse(StdResidual > 0, 1 - pnorm(StdResidual),
+                         pnorm(StdResidual)),
+         PValue_FDR = p.adjust(PValue, method = "fdr"),
+         Significant = PValue_FDR < 0.05)
+
+# --------------------------------------------------------------------------
+# STEP 4: Visualize Standardized Residuals with Significance Marked
+# --------------------------------------------------------------------------
+
+# Add asterisk only for significant cells
+residuals_df_2 <- residuals_df_2 %>%
+  mutate(Label = round(StdResidual, 1),
+         Asterisk = ifelse(Significant, "*", ""))
+knitr::kable(residuals_df_2) %>%
+  kableExtra::kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+ggplot(residuals_df_2, aes(x = Group, y = Class, fill = StdResidual)) +
+  geom_tile(color = "white") +
+  # Standardized residual (center of tile)
+  geom_text(aes(label = Label), color = "black", size = 3, vjust = 0.5, hjust = 0.5) +
+  # Asterisk in the top-right corner
+  geom_text(aes(label = Asterisk), 
+            color = "black", size = 5,
+            vjust = -1.5, hjust = -3.5) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  labs(title = "Standardized Residuals for Group/Class Contingency",
+       subtitle = "* indicates FDR-adjusted p < 0.05",
+       x = "Group", y = "Class", fill = "Std. Residual") +
+  theme_minimal()
+```
