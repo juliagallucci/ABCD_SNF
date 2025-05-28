@@ -1,5 +1,5 @@
 # Out of model
-This folder contains R Markdown scripts for out-of-model analyses, including subgroup differences in held-out (DTI and CBCL) and longitudinal behavioral data.
+This folder contains R Markdown scripts for out-of-model analyses, including subgroup differences in held-out (white matter + psychopathology) and longitudinal symptom data.
 
 ## Script Summaries
 
