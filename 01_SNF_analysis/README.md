@@ -13,3 +13,4 @@ This folder contains R and shell scripts for data processing, integration, and c
 - **justSNF.R** script to run data integration using the hyperparameters from metaSNF and spectral clustering to generate cluster assignments
 - **run_cluster.sh** script to run SNF in parallel by cluster number (2-6)
 - **cluster_comparisons.Rmd** Comparing consensus clustering to determine the optimal cluster number
+- **Features.csv** A comprehensive list of features included in the SNF analysis
