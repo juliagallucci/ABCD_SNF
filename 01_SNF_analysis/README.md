@@ -12,5 +12,6 @@ This folder contains R and shell scripts for data processing, integration, and c
 - **SNF_data_set_up.R** Prepares and harmonizes multimodal data (imaging, cognitive, environmental) from the ABCD study—including QC, sibling exclusion, imputation, and ComBat correction—for input into SNF.
 - **metaSNF_5050_split.Rmd** script to identify hyperparameters (number of nearest neighbors (k), the normalization parameter (alpha)) for SNF data integration using grid search
 - **justSNF.R** script to run data integration using the hyperparameters from metaSNF and spectral clustering to generate cluster assignments
+- **robust_core-clustering_function.R** helper function for justSNF.R Code from https://github.com/gracejacobs/SNF-NDD-Clustering 
 - **run_cluster.sh** script to run SNF in parallel by cluster number (2-6)
 - **cluster_comparisons.Rmd** Comparing consensus clustering to determine the optimal cluster number
