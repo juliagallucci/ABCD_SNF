@@ -147,6 +147,24 @@ cog_long <- cog_stacked %>%
     values_to = "score"
   )
 
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(test = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (test in test_names) {
+  model <- lm(as.formula(paste(test, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(test = test,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- cog_long %>%
@@ -193,6 +211,7 @@ tukey_df_filtered <- tukey_df_filtered %>%
   dplyr::select(test, contrast_direction)
 
 aov_summary <- aov_summary %>% arrange(-statistic)
+aov_summary <- full_join(aov_summary, effects, by = "test")
 aov_summary
 tukey_df_filtered
 ```
@@ -218,6 +237,27 @@ env_long <- env_stacked %>%
     names_to = "measure",
     values_to = "score"
   )
+
+test_names <- unique(env_long$measure)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(measure = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (measure in test_names) {
+  model <- lm(as.formula(paste(measure, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(measure = measure,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- env_long %>%
@@ -264,6 +304,7 @@ tukey_df_filtered <- tukey_df_filtered %>%
   dplyr::select(test, contrast_direction)
 
 aov_summary <- aov_summary %>% arrange(-statistic)
+aov_summary <- full_join(aov_summary, effects, by = "measure")
 aov_summary
 tukey_df_filtered
 ```
@@ -281,6 +322,28 @@ vol_long <- vol_stacked %>%
     names_to = "brain",
     values_to = "volume"
   )
+
+brain_names <- unique(vol_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(brain = brain,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
+
 
 # Step 1: Run ANOVA for each measure
 aov_results <- vol_long %>%
@@ -330,6 +393,8 @@ tukey_df_filtered <- tukey_df_filtered %>%
   mutate(brain = str_remove(brain, "smri_vol_scs_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
 
+aov_summary <- full_join(aov_summary, effects, by = "brain")
+
 aov_summary <- aov_summary %>%
   mutate(brain = str_remove(brain, "smri_vol_scs_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
@@ -370,9 +435,9 @@ replace_vol_labels <- function(vec, replacements) {
   return(vec)
 }
 
+aov_summary$brain <- replace_vol_labels(aov_summary$brain, vol_replacements)
 # Apply the replacement function to the 'brain' column 
 tukey_df_filtered$brain <- replace_vol_labels(tukey_df_filtered$brain, vol_replacements)
-aov_summary$brain <- replace_vol_labels(aov_summary$brain, vol_replacements)
 aov_summary <- aov_summary %>% arrange(-statistic)
 aov_summary
 tukey_df_filtered
@@ -390,6 +455,27 @@ thick_long <- thick_stacked %>%
     names_to = "brain",
     values_to = "thick"
   )
+
+brain_names <- unique(thick_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(brain = brain,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- thick_long %>%
@@ -439,6 +525,8 @@ tukey_df_filtered <- tukey_df_filtered %>%
   mutate(brain = str_remove(brain, "smri_thick_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
 
+aov_summary <- full_join(aov_summary, effects, by = "brain")
+
 aov_summary <- aov_summary %>%
   mutate(brain = str_remove(brain, "smri_thick_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
@@ -472,6 +560,7 @@ replacements <- c("Left Rostral Anterior Cingulate", "Right Rostral Anterior Cin
                   "Right Caudal Anterior Cingulate", "Left Caudal Anterior Cingulate", "Right Entorhinal",
                   "Left Bankssts","Left Cuneus","Left Fusiform","Left Insula","Left Lingual",
                   "Right Bankssts","Right Cuneus","Right Fusiform","Right Insula","Right Lingual")
+
 # Function to replace labels in the 'brain' column
 replace_labels <- function(df, patterns, replacements) {
   for(i in seq_along(patterns)) {
@@ -481,8 +570,8 @@ replace_labels <- function(df, patterns, replacements) {
 }
 
 # Apply the replacement function to the 'brain' column in All_results
-tukey_df_filtered$brain <- replace_labels(tukey_df_filtered,patterns, replacements)
-aov_summary$brain <- replace_labels(aov_summary,patterns,replacements)
+tukey_df_filtered <- replace_labels(tukey_df_filtered,patterns, replacements)
+aov_summary <- replace_labels(aov_summary,patterns,replacements)
 aov_summary <- aov_summary %>% arrange(-statistic)
 
 aov_summary
@@ -503,6 +592,26 @@ area_long <- area_stacked %>%
     values_to = "area"
   )
 
+brain_names <- unique(area_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(brain = brain,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- area_long %>%
@@ -551,13 +660,16 @@ tukey_df_filtered <- tukey_df_filtered %>%
 tukey_df_filtered <- tukey_df_filtered %>%
   mutate(brain = str_remove(brain, "smri_area_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
+
+aov_summary <- full_join(aov_summary, effects, by = "brain")
+
 aov_summary <- aov_summary %>%
   mutate(brain = str_remove(brain, "smri_area_cdk_"),                  # Remove the prefix
          brain = str_replace(brain, "(.*)(lh|rh)$", "\\2_\\1"))
 
 # Apply the replacement function to the 'brain' column in All_results
-tukey_df_filtered$brain <- replace_labels(tukey_df_filtered,patterns, replacements)
-aov_summary$brain <- replace_labels(aov_summary,patterns,replacements)
+tukey_df_filtered <- replace_labels(tukey_df_filtered,patterns, replacements)
+aov_summary <- replace_labels(aov_summary,patterns,replacements)
 aov_summary <- aov_summary %>% arrange(-statistic)
 
 aov_summary
@@ -582,6 +694,26 @@ RS_long <- RS_stacked %>%
     values_to = "RS"
   )
 
+brain_names <- unique(RS_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = compare_df)
+  aov_table <- Anova(model)  # Type II ANOVA from car package
+  eta <- eta_squared(aov_table, partial = FALSE)
+  
+  # Add result (assumes 'groups' is the first row in eta output)
+  effects <- rbind(effects, data.frame(brain = brain,
+                                       Eta2 = eta$Eta2[1]))
+}
+effects <- effects %>% arrange(-Eta2)
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- RS_long %>%
@@ -627,6 +759,8 @@ tukey_df_filtered <- tukey_df_filtered %>%
   mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
   dplyr::select(brain, contrast_direction)
 
+
+aov_summary <- full_join(aov_summary, effects, by = "brain")
 
 # Define cortical network (ngd) mappings
 ngd_mapping <- list(
