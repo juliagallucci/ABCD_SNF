@@ -8,7 +8,7 @@ output: html_document
 Fractional Anisotropy
 ``` {r}
 # Load data
-Diff_FA_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_FA_harmonized.csv")
+#Diff_FA_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_FA_harmonized.csv")
 
 # Merge group info 
 diffusion_data <- left_join(compare_df, Diff_FA_harmonized, by = "src_subject_id")
@@ -21,6 +21,28 @@ fa_stacked <- diffusion_data %>%
 fa_long <- fa_stacked %>% tidyr::pivot_longer(cols = -c(groups),
                                               names_to = "brain",
                                               values_to = "fa")
+
+brain_names <- unique(fa_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = diffusion_data)
+  aov_table <- Anova(model, type = 2)
+  eta <- eta_squared(aov_table)  # returns a named numeric vector
+  
+  # Extract eta² for 'groups'
+  Eta2_value <- unname(eta["groups"])
+  
+  effects <- rbind(effects, data.frame(brain = brain, Eta2 = Eta2_value))
+}
+effects <- effects %>% arrange(desc(Eta2))
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- fa_long %>%
@@ -202,16 +224,19 @@ replace_wm_labels <- function(vec, replacements) {
   return(vec)
 }
 
+aov_summary <- full_join(aov_summary, effects, by = "brain")
 # Apply the replacement function to the 'brain' column in All_results
 aov_summary$brain <- replace_wm_labels(aov_summary$brain, wm_replacements)
 aov_summary = aov_summary %>% arrange(-statistic)
+aov_summary
 tukey_df_filtered$brain <- replace_wm_labels(tukey_df_filtered$brain, wm_replacements)
+tukey_df_filtered
 ```
 
 Mean Diffusivity
 ```{r}
 # Load data
-Diff_MD_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_MD_harmonized.csv")
+#Diff_MD_harmonized <- read_csv("/mnt/tigrlab/projects/jgallucci/abcd/data/Diff_MD_harmonized.csv")
 # Merge group info (replace "subject_id" if another ID column is used)
 diffusion_data <- left_join(compare_df, Diff_MD_harmonized, by = "src_subject_id")
 
@@ -222,6 +247,27 @@ md_stacked <- diffusion_data %>%
 md_long <- md_stacked %>% tidyr::pivot_longer(cols = -c(groups),
                                               names_to = "brain",
                                               values_to = "md")
+brain_names <- unique(md_long$brain)
+
+### effect sizes
+# Initialize dataframe to store results
+effects <- data.frame(brain = character(),
+                      Eta2 = numeric(),
+                      stringsAsFactors = FALSE)
+
+# Loop through each test
+for (brain in brain_names) {
+  model <- lm(as.formula(paste(brain, "~ groups")), data = diffusion_data)
+  aov_table <- Anova(model, type = 2)
+  eta <- eta_squared(aov_table)  # returns a named numeric vector
+  
+  # Extract eta² for 'groups'
+  Eta2_value <- unname(eta["groups"])
+  
+  effects <- rbind(effects, data.frame(brain = brain, Eta2 = Eta2_value))
+}
+effects <- effects %>% arrange(desc(Eta2))
+print(effects)
 
 # Step 1: Run ANOVA for each measure
 aov_results <- md_long %>%
@@ -269,9 +315,11 @@ tukey_df_filtered <- tukey_df_filtered %>%
 
 # Apply the replacement function to the 'brain' column in All_results
 tukey_df_filtered$brain <- replace_wm_labels(tukey_df_filtered$brain, wm_replacements)
-
+aov_summary <- full_join(aov_summary, effects, by = "brain")
 aov_summary$brain <- replace_wm_labels(aov_summary$brain, wm_replacements)
 aov_summary = aov_summary %>% arrange(-statistic)
+aov_summary
+tukey_df_filtered
 ```
 
 CBCL
@@ -287,6 +335,23 @@ cbcl_stacked <- cbcl_baseline %>%
 cbcl_long <- cbcl_stacked %>% tidyr::pivot_longer(cols = -c(groups),
                                               names_to = "cbcl",
                                               values_to = "score")
+cbcl_names <- cbcl_columns
+### effect sizes
+effects <- data.frame(cbcl = character(), Eta2 = numeric(), stringsAsFactors = FALSE)
+
+for (cbcl in cbcl_names) {
+  model <- lm(as.formula(paste(cbcl, "~ groups")), data = cbcl_baseline)
+  aov_table <- Anova(model, type = 2)
+  eta <- eta_squared(aov_table)  # returns a named numeric vector
+  
+  # Extract eta² for 'groups'
+  Eta2_value <- unname(eta["groups"])
+  
+  effects <- rbind(effects, data.frame(cbcl = cbcl, Eta2 = Eta2_value))
+}
+effects <- effects %>% arrange(desc(Eta2))
+print(effects)
+
 
 # Step 1: Run ANOVA for each measure
 aov_results <- cbcl_long %>%
@@ -332,6 +397,7 @@ tukey_df_filtered <- tukey_df_filtered %>%
   mutate(contrast_direction = paste0(str_replace(contrast, "-", direction))) %>%
   dplyr::select(cbcl, contrast_direction)
 
+aov_summary <- full_join(aov_summary, effects, by = "cbcl")
 aov_summary = aov_summary %>% arrange(-statistic)
 aov_summary
 tukey_df_filtered
