@@ -110,6 +110,31 @@ freq_clust5_race <- table(clust5$race_ethnicity)
 lbls_clust5_race <- paste(names(freq_clust5_race), "-", round((freq_clust5_race / sum(freq_clust5_race)) * 100, 1), "%", sep = "")
 pie(freq_clust5_race, main = "Cluster 5", labels = lbls_clust5_race, cex = 1.5, col = c("lightblue", "lightgreen", "lightpink", "lightyellow", "lightgrey"))
 
+
+# ANOVA
+age_aov <- aov(interview_age.x ~ groups, data = compare_df)
+summary(age_aov)
+TukeyHSD(age_aov)
+
+# Contingency table
+sex_table <- table(compare_df$demo_sex, compare_df$groups)
+
+# Chi-square test
+sex_chi <- chisq.test(sex_table)
+print(sex_chi)
+
+sex_resid <- sex_chi$stdres
+which(abs(sex_resid) > 2, arr.ind = TRUE)
+
+
+# Contingency table
+race_table <- table(compare_df$race_ethnicity, compare_df$groups)
+
+# Chi-square test
+race_chi <- chisq.test(race_table)
+race_chi
+race_resid <- race_chi$stdres
+
 ```
 View separation of input features across clusters
 
