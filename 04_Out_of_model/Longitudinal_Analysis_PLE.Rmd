@@ -34,8 +34,7 @@ ple_longitudinal_long <- ple_longitudinal %>%
          time_point = recode(time_point,
                              "total_score_bl" = "0",
                              "total_score_1yr" = "1",
-                             "total_score_2yr" = "2",
-                             "total_score_3yr" = "3"),
+                             "total_score_2yr" = "2"),
          time_point = as.numeric(time_point))
 ```
 
