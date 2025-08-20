@@ -543,6 +543,7 @@ final_solutions_split2 <- split2_extended_solutions_matrix %>%
 print(final_solutions_split2)
 
 # Finding the row with the lowest minimum p-value across our outcomes
+# Decided to only use PLE score for target
 which(final_solutions_split2$"total_score_pval" ==
         min(final_solutions_split2$"total_score_pval"))
 
