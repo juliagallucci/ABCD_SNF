@@ -1,0 +1,214 @@
+---
+title: "cog_2yr"
+author: "Julia Gallucci"
+date: "20/08/2025"
+output: html_document
+---
+Load necessary packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(afex)       # For repeated measures ANOVA
+library(emmeans)    # For post-hoc comparisons
+
+```
+
+Load cog longitudinal data
+```{r}
+#X2yr_cognition is data from 2-year follow up, combine with baseline data
+#all combines discovery and replication to maximize sample
+cog <- left_join(all,X2yr_cognition)
+
+#select relevant columns
+cog <- cog %>%
+  dplyr::select(src_subject_id,
+                groups, 
+                nihtbx_flanker_uncorrected,
+                nihtbx_flanker_uncorrected_2yr,
+                nihtbx_list_uncorrected,
+                nihtbx_list_uncorrected_2yr,
+                nihtbx_cardsort_uncorrected,
+                nihtbx_cardsort_uncorrected_2yr,
+                nihtbx_pattern_uncorrected,
+                nihtbx_pattern_uncorrected_2yr,
+                nihtbx_picture_uncorrected,
+                nihtbx_picture_uncorrected_2yr,
+                nihtbx_reading_uncorrected,
+                nihtbx_reading_uncorrected_2yr,
+                nihtbx_picvocab_uncorrected,
+                nihtbx_picvocab_uncorrected_2yr,
+                pea_wiscv_trs,
+                pea_wiscv_trs_2yr,
+                rey_all_correct,
+                rey_all_correct_2yr,
+                lmt_scr_num_correct,
+                lmt_scr_num_correct_2yr)
+
+```
+
+Pivot to long format
+```{r}
+baseline_cols <- names(cog)[!(names(cog) %in% c("src_subject_id", "groups")) & !grepl("_2yr$|_4yr$", names(cog))]
+year2_cols <- paste0(baseline_cols, "_2yr")
+#year4_cols <- paste0(baseline_cols, "_4yr")
+
+cog_long <- cog %>%
+  pivot_longer(
+    cols = all_of(c(baseline_cols, year2_cols)),
+    names_to = "measure_time",
+    values_to = "score"
+  ) %>%
+  mutate(
+    time = case_when(
+      grepl("_2yr$", measure_time) ~ "year2",
+      TRUE ~ "baseline"
+    ),
+    measure = gsub("_2yr$", "", measure_time)
+  ) %>%
+  select(src_subject_id, groups, measure, time, score) %>%
+  mutate(
+    time = factor(time, levels = c("baseline", "year2")),
+    groups = factor(groups)
+  )
+```
+
+NonPLE reference group
+```{r}
+cog_nonPLE <- left_join(nonPLE, X4yr_cognition, by = "src_subject_id")
+cog_nonPLE$groups <- "NonPLE"
+
+cog_nonPLE <- cog_nonPLE %>%
+  select(src_subject_id, groups, all_of(c(baseline_cols, year2_cols)))
+
+cog_long_nonPLE <- cog_nonPLE %>%
+  pivot_longer(
+    cols = all_of(c(baseline_cols, year2_cols)),
+    names_to = "measure_time",
+    values_to = "score"
+  ) %>%
+  mutate(
+    time = case_when(
+      grepl("_2yr$", measure_time) ~ "year2",
+      TRUE ~ "baseline"
+    ),
+    measure = gsub("_2yr$", "", measure_time)
+  ) %>%
+  select(src_subject_id, groups, measure, time, score) %>%
+  mutate(
+    time = factor(time, levels = c("baseline", "year2")),
+    groups = factor(groups)
+  )
+
+```
+
+Composite score
+
+Calculates the mean and standard deviation for each cognitive measure at each time point in NonPLE. Then computes z-scores for all subjects relative to the NonPLE reference at the same time point. For each subject, averages the z-scores across all cognitive measures at a given time to create a single composite cognitive score.
+```{r}
+# Combine all data
+cog_long_all <- bind_rows(cog_long, cog_long_nonPLE)
+
+# Reference mean & SD for NonPLE at each time point
+ref_stats_time <- cog_long_nonPLE %>%
+  group_by(measure, time) %>%
+  summarise(
+    mean_ref = mean(score, na.rm = TRUE),
+    sd_ref   = sd(score, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Compute z-scores relative to NonPLE at each time point
+cog_long_scaled_ref <- cog_long_all %>%
+  left_join(ref_stats_time, by = c("measure", "time")) %>%
+  mutate(score_z_ref = (score - mean_ref) / sd_ref)
+
+# Compute composite per subject/time
+cog_composite_ref <- cog_long_scaled_ref %>%
+  group_by(src_subject_id, groups, time) %>%
+  summarise(composite_ref = mean(score_z_ref, na.rm = TRUE), .groups = "drop")
+
+# Remove subjects with any missing composite scores
+cog_composite_ref <- cog_composite_ref %>%
+  group_by(src_subject_id) %>%
+  filter(!any(is.na(composite_ref))) %>%
+  ungroup()
+
+# How many subjects per group
+
+group_counts <- cog_composite_ref %>%
+  distinct(src_subject_id, groups) %>%
+  group_by(groups) %>%
+  summarise(n = n())
+group_counts
+
+# Cluster 1 - 156
+# Cluster 2 - 388
+# Cluster 3 - 253
+# Cluster 4 - 445
+# Cluster 5 - 323
+# NonPLE - 2117
+
+```
+
+Repeated measures ANOVA
+```{r}
+# Ensure factors
+cog_composite_ref$time <- factor(cog_composite_ref$time, levels = c("baseline", "year2"))
+cog_composite_ref$groups <- factor(cog_composite_ref$groups)
+
+# Run ANOVA
+aov_res <- aov_ez(
+  id = "src_subject_id",
+  dv = "composite_ref",
+  data = cog_composite_ref,
+  within = "time",
+  between = "groups"
+)
+
+summary(aov_res) #significant group x time interaction
+
+#get pairwise interactions
+emm <- emmeans(aov_res, pairwise ~ groups | time)
+# Pairwise comparisons with fdr adjustment
+pairwise_contrasts <- contrast(emm, method = "pairwise", adjust = "fdr")
+pairwise_contrasts
+
+```
+
+```{r}
+# Group colors
+default_colors <- scales::hue_pal()(5)
+# Plot clusters with shaded confidence intervals, fixed y-axis, no NonPLE line
+ggplot(cog_composite_ref %>% filter(groups != "NonPLE"), 
+       aes(x = time, y = composite_ref, color = groups, group = groups, fill = groups)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun.data = mean_cl_normal, geom = "ribbon", alpha = 0.2, color = NA) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  annotate("text", x = 2, y = 0.05, label = "NonPLE", hjust = -0.5, vjust = 0.5, color = "grey") +
+  scale_color_manual(values = c(
+    "1" = default_colors[1],
+    "2" = default_colors[2],
+    "3" = default_colors[3],
+    "4" = default_colors[4],
+    "5" = default_colors[5]
+  )) +
+  scale_fill_manual(values = c(
+    "1" = default_colors[1],
+    "2" = default_colors[2],
+    "3" = default_colors[3],
+    "4" = default_colors[4],
+    "5" = default_colors[5]
+  )) +
+  coord_cartesian(ylim = c(-2, 2)) +
+  theme_classic() +
+  labs(
+    y = "Composite Cognitive Performance Z-Score",
+    x = "Time",
+    color = "Cluster",
+    fill = "Cluster"
+  )
+
+```
