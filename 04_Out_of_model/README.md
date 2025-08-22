@@ -7,3 +7,4 @@ This folder contains R Markdown scripts for out-of-model analyses, including sub
 - **Out-of-model.Rmd**: ANOVAs group-comparisons across held-out features; diffusion and CBCL 
 - **Longitudinal_Analysis_PLE.Rmd**
 Performs longitudinal trajectory modeling of Total PLE scores across baseline, Year 1, and Year 2 using LCGA and GMM.
+- **cog_2yr.Rmd**: Repeated measures ANOVA for cognitive performance
