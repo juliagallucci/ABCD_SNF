@@ -76,7 +76,7 @@ cog_long <- cog %>%
 
 NonPLE reference group
 ```{r}
-cog_nonPLE <- left_join(nonPLE, X4yr_cognition, by = "src_subject_id")
+cog_nonPLE <- left_join(nonPLE, X2yr_cognition, by = "src_subject_id")
 cog_nonPLE$groups <- "NonPLE"
 
 cog_nonPLE <- cog_nonPLE %>%
