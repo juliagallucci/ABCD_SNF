@@ -306,3 +306,28 @@ ggplot(residuals_df_2, aes(x = Group, y = Class, fill = StdResidual)) +
        x = "Group", y = "Class", fill = "Std. Residual") +
   theme_minimal()
 ```
+
+
+Model comparison
+```{r}
+# Ensure factors
+ple_longitudinal_long_2$class <- as.factor(ple_longitudinal_long_2$class)
+ple_longitudinal_long_2$groups <- as.factor(ple_longitudinal_long_2$groups)
+
+# Model A: baseline PLE only
+model_A <- multinom(class ~ ple_score, data = ple_longitudinal_long_2)
+summary(model_A)
+PseudoR2(model_A, which = "McFadden")
+# Model B: cluster/group membership only
+model_B <- multinom(class ~ groups, data = ple_longitudinal_long_2)
+summary(model_B)
+PseudoR2(model_B, which = "McFadden")
+
+# Model C: PLE + cluster
+model_C <- multinom(class ~ ple_score + groups, data = ple_longitudinal_long_2)
+summary(model_C)
+PseudoR2(model_C, which = "McFadden")
+
+# Likelihood ratio test: does adding cluster improve PLE-only model?
+lrtest(model_A, model_C) #significant p <.001
+```
